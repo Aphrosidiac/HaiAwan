@@ -295,6 +295,7 @@ final class CompanionEngine: ObservableObject {
     /// Esc: cancel a walkthrough, stop talking, or close the composer.
     func handleEscape() {
         if guided != nil { cancelGuided(silently: false); return }
+        if voiceState == .listening { abortListening(); return }   // a hold whose release got lost: Esc always gets you out
         if voiceState == .responding || voiceState == .processing || player.isActive { cancel(); return }
         if isTextComposerOpen { closeTextComposer() }
     }

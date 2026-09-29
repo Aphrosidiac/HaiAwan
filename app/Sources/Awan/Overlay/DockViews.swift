@@ -181,8 +181,8 @@ struct DockCardRoot: View {
         Group {
             if let slug = dock.cardSlug {
                 AgentHoverCard(slug: slug,
-                               onOpen: { AppState.shared.openAgent(slug); dock.hideCard() },
-                               onClose: { dock.hideCard() },
+                               onOpen: { AppState.shared.openAgent(slug); dock.closeCard() },
+                               onClose: { dock.closeCard() },
                                onEngage: { dock.setEngaged($0) },
                                onLayoutChange: { dock.relayoutSoon() })
                     .id(slug)

@@ -236,7 +236,22 @@ final class DockController: ObservableObject {
 
     // MARK: Hover card
 
+    /// A card closed with ×. Its portrait sits right under the ×, so the pointer is on it the moment the card goes
+    /// away; that hover must not reopen the card until the pointer has left the portrait once.
+    private var dismissedSlug: String?
+
+    /// The card's × (and Esc): close it and keep it closed while the pointer stays where it was.
+    func closeCard() {
+        dismissedSlug = cardSlug
+        hoveringBubble = nil
+        hoveringCard = false
+        hideCard()
+    }
+
     func bubbleHover(_ slug: String, _ inside: Bool) {
+        if inside, slug != dismissedSlug { dismissedSlug = nil }
+        if inside, slug == dismissedSlug { return }
+        if !inside, slug == dismissedSlug { dismissedSlug = nil }
         if inside {
             hoveringBubble = slug
         } else if hoveringBubble == slug {

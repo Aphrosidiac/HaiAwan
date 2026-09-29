@@ -6,14 +6,21 @@ import CoreGraphics
 /// Global shortcuts: talk (hold ⌃⌥), text (double-tap ⌃), dictate (hold fn⌃), hands-free dictate (double-tap fn⌃),
 /// always-on voice (triple-tap ⌃), open Home (⌃⌘A), Esc (interrupt). Bindings come from `Prefs.shared.shortcuts`.
 ///
-/// A listen-only CGEvent tap (needs Input Monitoring) sees modifier-only combos system-wide; without it we fall back
-/// to NSEvent global + local monitors (needs Accessibility for key events) and retry the tap every few seconds.
+/// A listen-only CGEvent tap sees modifier-only combos system-wide, but only once macOS trusts Awan (Accessibility, or
+/// Input Monitoring). Without that, macOS still lets the tap be created and quietly delivers only the keys typed while
+/// Awan is frontmost, and a tap created before the grant stays that way. So we watch the trust state and rebuild the
+/// tap the moment it's granted. If the tap can't be created at all we fall back to NSEvent monitors and keep retrying.
 /// Keep: shared, start(), stop(), hasPermission, recordNext(completion:).
 @MainActor final class HotkeyMonitor {
     static let shared = HotkeyMonitor()
 
-    /// The system-wide tap is running (Input Monitoring granted).
+    /// The system-wide tap is running and macOS lets it see keys typed in other apps.
     private(set) var hasPermission = false
+    /// The trust state the current tap was created under.
+    private var tapTrusted = false
+    /// The current tap is an active filter (created while Accessibility was granted).
+    private var tapActive = false
+    private var trustTimer: Timer?
     /// Running on NSEvent monitors because the tap couldn't be created.
     private(set) var usingFallback = false
 
@@ -23,6 +30,8 @@ import CoreGraphics
     private var monitors: [Any] = []
     private var retryTimer: Timer?
     private var pendingTimer: Timer?
+    private var holdWatch: Timer?
+    private var holdMismatches = 0
     private var cancellables = Set<AnyCancellable>()
     private var started = false
     private var ignoredTalk = false
@@ -35,26 +44,52 @@ import CoreGraphics
         started = true
         machine.shortcuts = Prefs.shared.shortcuts
         Prefs.shared.$shortcuts.sink { [weak self] s in self?.machine.shortcuts = s }.store(in: &cancellables)
-        if !installTap() {
+        let installed = installTap()
+        watchTrust()
+        if !installed {
             installFallback()
             retryTimer = Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { _ in
                 MainActor.assumeIsolated {
                     let me = HotkeyMonitor.shared
-                    if CGPreflightListenEventAccess(), me.installTap() { me.removeFallback(); me.retryTimer?.invalidate(); me.retryTimer = nil }
+                    if Self.isTrusted, me.installTap() { me.removeFallback(); me.retryTimer?.invalidate(); me.retryTimer = nil }
                 }
             }
         }
     }
 
-    func stop() {
-        started = false
-        retryTimer?.invalidate(); retryTimer = nil
-        pendingTimer?.invalidate(); pendingTimer = nil
-        removeFallback()
-        if let tapSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), tapSource, .commonModes) }
-        if let tap { CFMachPortInvalidate(tap) }
+    /// Keys from other apps reach the tap only when one of these is granted.
+    static var isTrusted: Bool { AXIsProcessTrusted() || CGPreflightListenEventAccess() }
+
+    /// Rebuilds the tap when trust changes (granted in System Settings while Awan runs), so the shortcuts start
+    /// working everywhere without a relaunch.
+    private func watchTrust() {
+        trustTimer?.invalidate()
+        trustTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { _ in
+            MainActor.assumeIsolated {
+                let me = HotkeyMonitor.shared
+                guard me.tap != nil, Self.isTrusted != me.tapTrusted || AXIsProcessTrusted() != me.tapActive else { return }
+                Log.info("hotkeys: trust changed (now \(Self.isTrusted ? "trusted" : "not trusted")), rebuilding the event tap")
+                me.removeTap()
+                if me.installTap() { me.removeFallback() }
+            }
+        }
+    }
+
+    private func removeTap() {
+        if let tap { CGEvent.tapEnable(tap: tap, enable: false); CFMachPortInvalidate(tap) }   // also ends the tap thread
+        Self.livePort = nil
         tap = nil; tapSource = nil
         hasPermission = false
+    }
+
+    func stop() {
+        started = false
+        trustTimer?.invalidate(); trustTimer = nil
+        retryTimer?.invalidate(); retryTimer = nil
+        pendingTimer?.invalidate(); pendingTimer = nil
+        holdWatch?.invalidate(); holdWatch = nil
+        removeFallback()
+        removeTap()
         cancellables.removeAll()
     }
 
@@ -70,21 +105,42 @@ import CoreGraphics
 
     // MARK: - Tap
 
+    /// The live tap, for re-enabling it from the tap thread when macOS switches it off after a slow callback.
+    nonisolated(unsafe) private static var livePort: CFMachPort?
+
+    /// With Accessibility the tap is an active filter (`.defaultTap`), which macOS lets see keys typed in every app;
+    /// a listen-only tap would need Input Monitoring for that. It never changes or swallows an event: the callback
+    /// copies what it needs and passes the event straight on. Because an active tap sits in the system's input path,
+    /// it runs on its own thread and only hands work to the main thread asynchronously, so a busy main thread can
+    /// never delay typing anywhere else.
     @discardableResult
     private func installTap() -> Bool {
         guard tap == nil else { return true }
         let types: [CGEventType] = [.flagsChanged, .keyDown, .keyUp]
         let mask = types.reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << $1.rawValue) }
-        let callback: CGEventTapCallBack = { _, type, event, info in
-            if let info {
-                let monitor = Unmanaged<HotkeyMonitor>.fromOpaque(info).takeUnretainedValue()
-                MainActor.assumeIsolated { monitor.handleTap(type: type, event: event) }
+        let callback: CGEventTapCallBack = { _, type, event, _ in
+            switch type {
+            case .tapDisabledByTimeout, .tapDisabledByUserInput:
+                if let port = HotkeyMonitor.livePort { CGEvent.tapEnable(tap: port, enable: true) }
+            case .flagsChanged, .keyDown, .keyUp:
+                let flags = NSEvent.ModifierFlags(rawValue: UInt(event.flags.rawValue))
+                let code = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
+                let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated { HotkeyMonitor.shared.handleTap(type: type, flags: flags, code: code, isRepeat: isRepeat) }
+                }
+            default:
+                break
             }
             return Unmanaged.passUnretained(event)
         }
-        guard let port = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .listenOnly,
-                                           eventsOfInterest: mask, callback: callback, userInfo: Unmanaged.passUnretained(self).toOpaque()) else {
-            if !usingFallback { Log.info("hotkeys: no Input Monitoring permission — using fallback monitors") }
+        let create = { (options: CGEventTapOptions) in
+            CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: options,
+                              eventsOfInterest: mask, callback: callback, userInfo: nil)
+        }
+        let active = AXIsProcessTrusted()
+        guard let port = (active ? create(.defaultTap) : nil) ?? create(.listenOnly) else {
+            if !usingFallback { Log.info("hotkeys: couldn't create the event tap — using fallback monitors") }
             hasPermission = false
             return false
         }
@@ -94,26 +150,33 @@ import CoreGraphics
         }
         tap = port
         tapSource = source
-        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
-        CGEvent.tapEnable(tap: port, enable: true)
-        hasPermission = true
-        Log.info("hotkeys: event tap installed")
+        Self.livePort = port
+        let thread = Thread {
+            CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
+            CGEvent.tapEnable(tap: port, enable: true)
+            CFRunLoopRun()   // returns once the port is invalidated (removeTap) and the loop has nothing left
+        }
+        thread.name = "Awan hotkeys"
+        thread.qualityOfService = .userInteractive
+        thread.start()
+        tapTrusted = Self.isTrusted
+        tapActive = active
+        hasPermission = tapTrusted
+        Log.info("hotkeys: event tap installed (\(active ? "active" : "listen-only"); accessibility \(AXIsProcessTrusted() ? "yes" : "no"), input monitoring \(CGPreflightListenEventAccess() ? "yes" : "no"))"
+                 + (tapTrusted ? "" : " — shortcuts only work while Awan is frontmost until one is granted"))
         return true
     }
 
-    private func handleTap(type: CGEventType, event: CGEvent) {
+    /// Self-test only: flag changes before this uptime are dropped, to imitate a release macOS never delivered.
+    fileprivate var dropFlagsUntil: TimeInterval = 0
+
+    private func handleTap(type: CGEventType, flags: NSEvent.ModifierFlags, code: UInt16, isRepeat: Bool) {
+        if type == .flagsChanged, Self.clock() < dropFlagsUntil { return }
         switch type {
-        case .tapDisabledByTimeout, .tapDisabledByUserInput:
-            if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
-        case .flagsChanged:
-            handleFlags(NSEvent.ModifierFlags(rawValue: UInt(event.flags.rawValue)))
-        case .keyDown:
-            handleKeyDown(UInt16(event.getIntegerValueField(.keyboardEventKeycode)), flags: NSEvent.ModifierFlags(rawValue: UInt(event.flags.rawValue)),
-                          isRepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0)
-        case .keyUp:
-            handleKeyUp(UInt16(event.getIntegerValueField(.keyboardEventKeycode)))
-        default:
-            break
+        case .flagsChanged: handleFlags(flags)
+        case .keyDown: handleKeyDown(code, flags: flags, isRepeat: isRepeat)
+        case .keyUp: handleKeyUp(code)
+        default: break
         }
     }
 
@@ -151,6 +214,33 @@ import CoreGraphics
         if let recorder { recorder.flags(flags.intersection(HotkeyStateMachine.relevant), at: t); return }
         perform(machine.flags(flags, at: t))
         schedulePending()
+        watchHold()
+    }
+
+    /// While a modifier-only hold (talk, dictate) is down, check the keyboard's real modifier state every 0.1 s.
+    /// macOS can drop the release (secure input in a password field, the tap paused after a slow callback, a
+    /// fast app switch), and a lost release would leave Awan listening and drawing forever.
+    private func watchHold() {
+        guard machine.isHoldingModifiers else { holdWatch?.invalidate(); holdWatch = nil; return }
+        guard holdWatch == nil else { return }
+        holdWatch = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
+            MainActor.assumeIsolated {
+                let me = HotkeyMonitor.shared
+                let real = NSEvent.ModifierFlags(rawValue: UInt(CGEventSource.flagsState(.combinedSessionState).rawValue))
+                    .intersection(HotkeyStateMachine.relevant)
+                // Two readings in a row (0.2 s) before acting, so a momentary mismatch never ends a real hold.
+                if real != me.machine.currentFlags {
+                    me.holdMismatches += 1
+                    guard me.holdMismatches >= 2 else { return }
+                    me.holdMismatches = 0
+                    Log.info("hotkeys: missed a modifier change (seen \(me.machine.currentFlags.rawValue), session \(real.rawValue), hid \(NSEvent.ModifierFlags(rawValue: UInt(CGEventSource.flagsState(.hidSystemState).rawValue)).intersection(HotkeyStateMachine.relevant).rawValue)), syncing")
+                    me.handleFlags(real)
+                } else {
+                    me.holdMismatches = 0
+                    if !me.machine.isHoldingModifiers { me.holdWatch?.invalidate(); me.holdWatch = nil }
+                }
+            }
+        }
     }
 
     private func handleKeyDown(_ code: UInt16, flags: NSEvent.ModifierFlags, isRepeat: Bool) {
@@ -217,6 +307,36 @@ import CoreGraphics
     }
 }
 
+// MARK: - Self-test
+
+extension HotkeyMonitor {
+    /// `Awan --hotkey-selftest`: after 3 s (bring another app to the front meanwhile), posts a 1.5 s ⌃⌥ hold at the
+    /// HID level, the same path a real keyboard takes, so the log shows whether the tap hears keys meant for other apps.
+    static func selfTest() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            let front = NSWorkspace.shared.frontmostApplication?.localizedName ?? "?"
+            Log.info("hotkey selftest: holding control + option while \(front) is frontmost")
+            let src = CGEventSource(stateID: .hidSystemState)
+            func post(_ key: CGKeyCode, _ down: Bool, _ flags: CGEventFlags) {
+                guard let e = CGEvent(keyboardEventSource: src, virtualKey: key, keyDown: down) else { return }
+                e.type = .flagsChanged
+                e.flags = flags
+                e.post(tap: .cghidEventTap)
+            }
+            post(0x3B, true, .maskControl)
+            post(0x3A, true, [.maskControl, .maskAlternate])
+        
+            let lose = CommandLine.arguments.contains("lost-release")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                if lose { shared.dropFlagsUntil = ProcessInfo.processInfo.systemUptime + 0.3 }
+                post(0x3A, false, .maskControl)
+                post(0x3B, false, [])
+                Log.info("hotkey selftest: released" + (lose ? " (release hidden from Awan)" : ""))
+            }
+        }
+    }
+}
+
 // MARK: - The pure state machine (unit-tested)
 
 enum HotkeyAction: String { case talk, text, dictate, handsFreeDictate, openHome, alwaysOn, escape, handoff }
@@ -240,6 +360,9 @@ struct HotkeyStateMachine {
 
     private(set) var pendingDeadline: TimeInterval?
     private var current: Flags = []
+    var currentFlags: Flags { current }
+    /// A modifier-only hold (no key) is in progress.
+    var isHoldingModifiers: Bool { activeHold.map { $0.keyCode == nil } ?? false }
     private var pressStart: TimeInterval = 0
     private var pressMax: Flags = []
     private var pressDirty = false

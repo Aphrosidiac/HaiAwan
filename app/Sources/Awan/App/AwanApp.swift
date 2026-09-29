@@ -52,6 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         state.routines.start()
         MorningSuggestions.shared.start()
         HotkeyMonitor.shared.start()
+        if CommandLine.arguments.contains("--hotkey-selftest") { HotkeyMonitor.selfTest() }
         NotchExtras.start()   // wave 2: meetings, integration suggestions, "App updated"
         PaywallWindowController.shared.install()
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { HomeWindowController.shared.prewarm() }
