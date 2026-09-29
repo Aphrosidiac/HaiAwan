@@ -43,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applyDockPolicy()
         buildMainMenu()
         Log.info("Awan \(Bundle.main.shortVersion) launching")
+        Log.info("permissions: " + PermissionKind.allCases.map { "\($0.rawValue) \(PermissionProbe.status($0))" }.joined(separator: ", "))
 
         ConnectorRuntimeBridge.install()
         _ = SettingsUI.shared   // listens for Help → Report a Bug before Settings is ever shown

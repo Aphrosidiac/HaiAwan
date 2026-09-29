@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import Combine
 import Foundation
 import SwiftUI
@@ -21,6 +22,8 @@ final class CompanionEngine: ObservableObject {
     @Published var responseText = ""
     @Published var isTextComposerOpen = false
     @Published var audioLevel: Float = 0
+    /// Loudest mic level in the current hold: tells "heard nothing" (silence, e.g. the mic is blocked) from "said nothing clear".
+    private var peakLevel: Float = 0
 
     /// What the user said or typed for the current/last turn.
     @Published var lastUserText = ""
@@ -116,6 +119,7 @@ final class CompanionEngine: ObservableObject {
         responseText = ""
         lastUserText = ""
         Sounds.play(.listenStart)
+        peakLevel = 0
         setVoice(.listening)
         CursorOverlayController.shared.clearAnnotations()
         CursorOverlayController.shared.beginSpatialTrail()
@@ -130,7 +134,7 @@ final class CompanionEngine: ObservableObject {
             always.onBuffer = { [weak stt] b in stt?.append(b); feeder?.append(b) }
         } else {
             let capture = AudioCapture(deviceUID: Prefs.shared.microphoneUID)
-            capture.onLevel = { [weak self] l in self?.audioLevel = l }
+            capture.onLevel = { [weak self] l in self?.audioLevel = l; if l > self?.peakLevel ?? 1 { self?.peakLevel = l } }
             capture.onBuffer = { [weak stt] b in stt?.append(b); feeder?.append(b) }
             do {
                 try capture.start()
@@ -180,9 +184,18 @@ final class CompanionEngine: ObservableObject {
             let transcript = text.trimmingCharacters(in: .whitespacesAndNewlines)
             self.liveTranscript = transcript
             guard !transcript.isEmpty else {
-                Log.info("companion: heard nothing")
+                let mic = AVCaptureDevice.authorizationStatus(for: .audio)
+                Log.info("companion: heard nothing (mic \(mic == .authorized ? "allowed" : "not allowed"), peak level \(String(format: "%.3f", self.peakLevel)))")
                 capture?.cancel()
                 self.setVoice(.idle)
+                // Say why, instead of silently doing nothing.
+                if mic != .authorized {
+                    NotchController.shared.present(.message("I can't hear you. Turn on Microphone for Awan in System Settings → Privacy & Security."), for: 6)
+                } else if self.peakLevel < 0.02 && self.alwaysOnMic == nil {
+                    NotchController.shared.present(.message("I didn't hear anything. Check that your mic is on in Settings → Voice."), for: 5)
+                } else {
+                    NotchController.shared.present(.message("I didn't catch that. Hold the keys and try again?"), for: 3)
+                }
                 return
             }
             self.lastUserText = transcript
