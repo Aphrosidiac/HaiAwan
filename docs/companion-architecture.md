@@ -67,6 +67,8 @@ their own. Each is re-sent only when it changed:
 | `[suggestions]` | the suggestion cards on screen, with ids, for "yes, do it" / "next" |
 | `[open document]` | a document is open and its full text is with the deeper pass |
 | `[drawing]` | what you circled, scribbled or lined while talking, where on which screen, and what Accessibility says is under it |
+| `[attachments]` | files dropped on the mascot, with their paths and how to route them: up to two small images are seen directly; anything else goes to an Awan with the files (reading tools are withheld that turn) |
+| `[voice style, this turn]` | the one-beat preamble ("one sec.", "okay.", or silence) allowed before a slow tool; never talk between tool calls |
 | `[awan update]` | an Awan finished or needs you (spoken in Awan's own words, or kept silently if you were busy) |
 | `[walkthrough]` | the next step after you clicked a walkthrough target |
 | `[earlier conversation]` | the transcript that seeds a new session |
@@ -89,6 +91,9 @@ their own. Each is re-sent only when it changed:
 | `read_file` / `list_files` | read-only file access (keys, keychains, `.env` and friends are refused) |
 | `account_status` | plan, usage, permissions, shortcuts |
 | `decide_suggestion` | approve or skip a suggestion on screen |
+
+Speech: the first model round streams to the voice at once; rounds after a tool result are spoken only when they end
+the turn, so narration that only leads into another tool call stays unspoken.
 
 Rules the loop enforces: at most 6 tool calls and 8 model rounds per turn (then the model must answer with what it
 has), a new turn cancels the old one, and any unanswered tool call gets a "cancelled" result so the conversation stays
