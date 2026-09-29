@@ -63,7 +63,12 @@ enum CompanionTyper {
         if let point, AXIsProcessTrusted() { await focusField(at: point) }
 
         var singleLine = false
-        if AXIsProcessTrusted(), let el = TextInserter.focusedElement() {
+        if AXIsProcessTrusted() {
+            // Nothing editable has focus: a blind ⌘V would land nowhere, so the text goes on the clipboard instead.
+            guard let el = TextInserter.focusedElement(), isEditableText(el) else {
+                TextInserter.copy(request.text)
+                return .clipboard
+            }
             if TextInserter.isSecure(el) { return .refusedSecure }
             if isAddressBar(el, app: app) { return .refusedAddressBar }
             singleLine = (TextInserter.string(el, kAXRoleAttribute) ?? "") == (kAXTextFieldRole as String)
@@ -75,6 +80,16 @@ enum CompanionTyper {
         case .empty: return .nothingToType
         case .clipboard: return .clipboard
         }
+    }
+
+    /// A focused element that takes typing: a text role, or anything exposing a text selection (web editors).
+    static func isEditableText(_ el: AXUIElement) -> Bool {
+        let role = TextInserter.string(el, kAXRoleAttribute) ?? ""
+        if [kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole, "AXSearchField"].contains(where: { $0 as String == role }) { return true }
+        var range: CFTypeRef?
+        if AXUIElementCopyAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, &range) == .success, range != nil { return true }
+        var settable: DarwinBoolean = false
+        return AXUIElementIsAttributeSettable(el, kAXValueAttribute as CFString, &settable) == .success && settable.boolValue && role != (kAXButtonRole as String)
     }
 
     /// Focus the text field under a global AppKit point: AX focus first, a real click only as a fallback.

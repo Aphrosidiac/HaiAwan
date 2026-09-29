@@ -4,15 +4,24 @@ import Combine
 import Foundation
 import SwiftUI
 
-/// The voice/text companion loop: hold-to-talk → mic + live STT + screenshots (+ spatial trail) →
-/// POST /v1/companion/respond (SSE) → sentence-chunked speech, pointing/annotations synced to the voice,
-/// agent hand-offs, guided walkthroughs, text mode, always-on voice.
+/// The voice/text companion.
+///
+/// Architecture (v2, modelled on the reference's realtime companion):
+///   hold-to-talk → mic + live STT + screenshots (+ what the user drew)
+///   → one ongoing conversation (`CompanionConversation`) that gets the user's words plus silent context notes
+///     ([time], [app], [awans], [awan progress], [home], [open document], [drawing], screenshots when they changed)
+///   → POST /v1/companion/turn, one streamed model round at a time: speech starts on the first sentence, tool calls
+///     run here (`CompanionTools`), their results go back into the conversation, and the model continues
+///   → `ask_deeper` hands screen-exact work (pointing, drawing, walkthroughs, typing into a visible field, reading the
+///     open document) to a frontier vision model; its visuals are synced to the voice model's speech.
+/// Agent announcements, walkthrough steps and follow-ups ride the same conversation, so "what did it find?" and
+/// "do that again" resolve against everything that happened.
 ///
 /// Public API (keep): voiceState, liveTranscript, responseText, isTextComposerOpen, audioLevel,
 ///   start(), beginListening(target:) (a target Awan slug routes the speech to that Awan), endListening(),
 ///   sendText(_:), cancel(), announce(_:), openTextComposer()
-/// Added: isQuiet, lastUserText, isStreaming, composerDraft, history, closeTextComposer(), abortListening(),
-///   toggleAlwaysOn(), handleEscape(), guidedStep, stopSpeaking()
+/// Also: isQuiet, lastUserText, isStreaming, composerDraft, history, closeTextComposer(), abortListening(),
+///   toggleAlwaysOn(), handleEscape(), guidedStep, stopSpeaking(), toolStatus, agentUpdate(…)
 @MainActor
 final class CompanionEngine: ObservableObject {
     static let shared = CompanionEngine()
@@ -33,13 +42,32 @@ final class CompanionEngine: ObservableObject {
     @Published var composerDraft = ""
     /// 0 = no walkthrough; otherwise the guided step number currently armed.
     @Published private(set) var guidedStep = 0
-    @Published private(set) var history: [CompanionExchange] = []
+    /// What a running tool is doing ("Looking closer…"), for the cursor bubble and the notch.
+    @Published private(set) var toolStatus: String?
+
+    let conversation = CompanionConversation.shared
+    /// Self-tests: no overlay, notch or cursor calls (the process has no UI).
+    static var headless = false
+    /// The exchanges so far (user ↔ Awan), newest last.
+    var history: [CompanionExchange] {
+        var out: [CompanionExchange] = []
+        var pendingUser: String?
+        for line in conversation.transcript {
+            if line.role == "user" { pendingUser = line.text }
+            if line.role == "awan", let u = pendingUser { out.append(CompanionExchange(user: u, assistant: line.text)); pendingUser = nil }
+        }
+        return out
+    }
 
     /// A call or screen share is going on — skip unprompted speech (morning hello, agent announcements).
     var isQuiet: Bool { QuietContext.reason(companionMicActive: mic?.isRunning ?? false) != nil }
 
     static let maxGuidedSteps = 15
     static let historyLimit = 20
+    /// Tool calls one user turn may make before the model must answer with what it has.
+    static let toolCallCap = 6
+    /// Model rounds per turn (a round = the model's text and/or tool calls).
+    static let roundCap = 8
 
     private(set) lazy var player: SpeechPlayer = {
         let p = SpeechPlayer()
@@ -51,10 +79,11 @@ final class CompanionEngine: ObservableObject {
     private var mic: AudioCapture?
     private var transcriber: TalkTranscriber?
     private var captureTask: Task<[ScreenCaptureFrame], Never>?
-    private var responseTask: Task<Void, Never>?
+    private var documentTask: Task<ActiveDocument?, Never>?
+    var responseTask: Task<Void, Never>?
     private var listenTarget: String?
     private var listenStartedAt = Date()
-    private var turnIsText = false
+    private(set) var turnIsText = false
     private var cancellables = Set<AnyCancellable>()
     private var started = false
 
@@ -64,15 +93,21 @@ final class CompanionEngine: ObservableObject {
     private var alwaysOnTurn = false
 
     // Visual sync
-    private var pendingVisuals: [(sentence: Int, visual: ResolvedVisual)] = []
+    var pendingVisuals: [(sentence: Int, visual: ResolvedVisual)] = []
     private var sentencesStarted = -1
     private var clearTask: Task<Void, Never>?
 
     // Guided walkthrough
-    private struct Guided { var goal: String; var requestId: String; var completed: [String] }
-    private var guided: Guided?
+    struct Guided { var goal: String; var completed: [String] }
+    var guided: Guided?
 
     private var pendingAnnouncements: [String] = []
+    /// Agent updates that arrived while Awan was busy; spoken (through the conversation) once it's idle.
+    private var pendingAgentUpdates: [String] = []
+    /// When the last user turn went out (agent progress newer than this is news to the model).
+    private var lastTurnAt = Date.distantPast
+    /// Which Awan's chat the user last had open in Home, and until when (for the [awans] note).
+    private var lastViewedAgent: (slug: String, until: Date)?
 
     /// Handoff "Ask Awan" (wave 2): selected screen regions that replace the screenshots for the next turn
     /// (typed or spoken). Consumed by that turn.
@@ -80,8 +115,8 @@ final class CompanionEngine: ObservableObject {
     static let regionNote = "(the user drew a box around part of their screen and attached it — that image is what \"this\" refers to.)"
     /// The app the user was in when the turn began (typing goes back there; its document is read).
     private(set) var turnApp: NSRunningApplication?
-    /// This voice turn runs on OpenAI Realtime (features.realtime) instead of STT → chat → TTS.
-    private var realtimeTurn = false
+    /// The turn in flight (its screens, document and drawing are what the tools see).
+    private(set) var currentTurn: CompanionTurn?
 
     // MARK: - Lifecycle
 
@@ -90,6 +125,15 @@ final class CompanionEngine: ObservableObject {
         started = true
         Prefs.shared.$alwaysOnVoice.removeDuplicates().sink { [weak self] on in
             Task { @MainActor in on ? self?.startAlwaysOn() : self?.stopAlwaysOn() }
+        }.store(in: &cancellables)
+        // Remember which Awan's chat the user was just looking at.
+        let state = AppState.shared
+        Publishers.CombineLatest(state.$isHomeOpen, state.$homePage).sink { [weak self] open, page in
+            guard let self else { return }
+            if let v = self.lastViewedAgent, !(open && page == .agent(v.slug)) {
+                self.lastViewedAgent = (v.slug, Date())
+            }
+            if open, case let .agent(slug) = page { self.lastViewedAgent = (slug, .distantFuture) }
         }.store(in: &cancellables)
         MorningGreeting.shared.start()
     }
@@ -112,9 +156,6 @@ final class CompanionEngine: ObservableObject {
         listenStartedAt = Date()
         turnIsText = false
         turnApp = Self.userFrontApp()
-        realtimeTurn = target == nil && RealtimeVoiceSession.isEnabled
-        if realtimeTurn { RealtimeVoiceSession.shared.beginTurn() }
-        let feeder = realtimeTurn ? RealtimeVoiceSession.shared.feeder : nil
         liveTranscript = ""
         responseText = ""
         lastUserText = ""
@@ -131,11 +172,11 @@ final class CompanionEngine: ObservableObject {
 
         if let always = alwaysOnMic, always.isRunning {
             always.resetRecording(keepingLast: 0.35)
-            always.onBuffer = { [weak stt] b in stt?.append(b); feeder?.append(b) }
+            always.onBuffer = { [weak stt] b in stt?.append(b) }
         } else {
             let capture = AudioCapture(deviceUID: Prefs.shared.microphoneUID)
             capture.onLevel = { [weak self] l in self?.audioLevel = l; if l > self?.peakLevel ?? 1 { self?.peakLevel = l } }
-            capture.onBuffer = { [weak stt] b in stt?.append(b); feeder?.append(b) }
+            capture.onBuffer = { [weak stt] b in stt?.append(b) }
             do {
                 try capture.start()
                 mic = capture
@@ -148,9 +189,12 @@ final class CompanionEngine: ObservableObject {
                 return
             }
         }
-        // Capture now (what the user is looking at when they start talking); awaited on release.
+        // Capture now (what the user is looking at when they start talking) and read the front document in
+        // parallel; both are awaited on release.
         if target == nil {
             captureTask = Task { await Self.captureFrames() }
+            let app = turnApp
+            documentTask = Task { await Self.readActiveDocument(app: app) }
         }
     }
 
@@ -174,26 +218,34 @@ final class CompanionEngine: ObservableObject {
         listenTarget = nil
         let capture = captureTask
         captureTask = nil
+        let docTask = documentTask
+        documentTask = nil
         let regions = pendingRegions
         pendingRegions = []
+        let peak = peakLevel
+        let held = Date().timeIntervalSince(listenStartedAt)
 
         responseTask?.cancel()
         responseTask = Task { [weak self] in
-            let text = await stt?.finish(pcm16: pcm) ?? ""
+            // Only ask the server to transcribe when Apple Speech couldn't run and there was sound to transcribe:
+            // silence sent to an audio model comes back as invented words (it echoed the dictionary, "Hai Awan").
+            let serverFallback = peak >= Self.speechLevelFloor
+            let text = await stt?.finish(pcm16: pcm, allowServerFallback: serverFallback) ?? ""
             guard let self, !Task.isCancelled else { return }
             let transcript = text.trimmingCharacters(in: .whitespacesAndNewlines)
             self.liveTranscript = transcript
-            guard !transcript.isEmpty else {
+            guard Self.isUtterance(transcript) else {
                 let mic = AVCaptureDevice.authorizationStatus(for: .audio)
-                Log.info("companion: heard nothing (mic \(mic == .authorized ? "allowed" : "not allowed"), peak level \(String(format: "%.3f", self.peakLevel)))")
+                Log.info("companion: heard nothing (held \(String(format: "%.1f", held)) s, mic \(mic == .authorized ? "allowed" : "not allowed"), peak level \(String(format: "%.3f", peak)))")
                 capture?.cancel()
+                docTask?.cancel()
                 self.setVoice(.idle)
-                // Say why, instead of silently doing nothing.
+                // A quick tap is nothing; a real hold with no words gets one quiet line on the notch, never a reply.
                 if mic != .authorized {
                     NotchController.shared.present(.message("I can't hear you. Turn on Microphone for Awan in System Settings → Privacy & Security."), for: 6)
-                } else if self.peakLevel < 0.02 && self.alwaysOnMic == nil {
-                    NotchController.shared.present(.message("I didn't hear anything. Check that your mic is on in Settings → Voice."), for: 5)
-                } else {
+                } else if held >= 0.8, peak < 0.02, self.alwaysOnMic == nil {
+                    NotchController.shared.present(.message("I didn't hear anything. Check that your mic is on in Settings → Microphone."), for: 5)
+                } else if held >= 0.8, self.alwaysOnMic == nil {
                     NotchController.shared.present(.message("I didn't catch that. Hold the keys and try again?"), for: 3)
                 }
                 return
@@ -201,36 +253,38 @@ final class CompanionEngine: ObservableObject {
             self.lastUserText = transcript
             // Capture-only answers (Suggestions → Adjust, New Awan interview): hand the words back, don't reply.
             if target == VoiceAnswer.target || VoiceAnswer.shared.isWaiting {
-                capture?.cancel()
+                capture?.cancel(); docTask?.cancel()
                 _ = VoiceAnswer.shared.deliver(transcript)
                 self.setVoice(.idle)
                 return
             }
             if let target {
-                self.sendToAwan(transcript, slug: target, display: transcript, announce: false)
-                self.setVoice(.idle)
+                await self.followUp(transcript, to: target)
                 return
             }
-            if !regions.isEmpty {
-                capture?.cancel()
-                await self.respond(to: transcript + "\n\n" + Self.regionNote, display: transcript, frames: regions, requestId: UUID().uuidString, speak: true)
-                return
-            }
-            async let docTask = Self.readDocumentIfAsked(transcript, app: self.turnApp)
-            var frames = await capture?.value ?? []
-            let document = await docTask
-            var prompt = transcript
+            var frames = regions.isEmpty ? (await capture?.value ?? []) : regions
+            if !regions.isEmpty { capture?.cancel() }
+            let document = await docTask?.value
+            let drawing = CompanionNotes.drawing(trail, frames: frames)
             let marks = trail.filter(ScreenCapture.isMeaningfulTrail)
             if !marks.isEmpty, let i = frames.firstIndex(where: { $0.isCursorScreen }) {
                 for stroke in marks { frames[i] = ScreenCapture.drawTrail(stroke, on: frames[i]) }
-                prompt += "\n\n(the user circled/scribbled on the highlighted area — the translucent lime stroke on screen \(frames[i].index) — while talking; that's what \"this\"/\"here\" refers to.)"
             }
-            if self.realtimeTurn, RealtimeVoiceSession.isEnabled {
-                await self.respondRealtime(note: prompt == transcript ? nil : prompt, display: transcript, frames: frames, document: document, requestId: UUID().uuidString)
-                return
-            }
-            await self.respond(to: prompt, display: transcript, frames: frames, requestId: UUID().uuidString, speak: true, document: document)
+            let turn = CompanionTurn(userText: regions.isEmpty ? transcript : transcript + "\n\n" + Self.regionNote, display: transcript,
+                                     frames: frames, document: document, drawing: drawing, app: self.turnApp, speak: true)
+            await self.runUserTurn(turn)
         }
+    }
+
+    /// Below this smoothed mic level nothing was said (the level meter's scale: 0 = −55 dB, 1 = −10 dB; 0.45 ≈ −35 dB).
+    static let speechLevelFloor: Float = 0.45
+
+    /// A transcript worth answering: at least one letter or digit, not only filler.
+    static func isUtterance(_ t: String) -> Bool {
+        let words = t.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }
+        guard !words.isEmpty else { return false }
+        let filler: Set<String> = ["uh", "um", "umm", "hmm", "mm", "mhm", "ah", "er", "erm"]
+        return !words.allSatisfy { filler.contains($0) }
     }
 
     /// Talk key tapped too briefly (or a shortcut was typed over it): throw the turn away.
@@ -240,10 +294,10 @@ final class CompanionEngine: ObservableObject {
         transcriber?.cancel(); transcriber = nil
         if let always = alwaysOnMic, always.isRunning { always.onBuffer = nil } else { mic?.stop(); mic = nil }
         captureTask?.cancel(); captureTask = nil
+        documentTask?.cancel(); documentTask = nil
         listenTarget = nil
         pendingRegions = []
         audioLevel = 0
-        if realtimeTurn { RealtimeVoiceSession.shared.feeder.detach(); realtimeTurn = false }
         setVoice(.idle)
     }
 
@@ -286,13 +340,14 @@ final class CompanionEngine: ObservableObject {
         pendingRegions = []
         let app = turnApp
         responseTask = Task { [weak self] in
-            async let docTask = Self.readDocumentIfAsked(t, app: app)
+            async let docTask = Self.readActiveDocument(app: app)
             let frames = regions.isEmpty ? await Self.captureFrames() : regions
             let document = await docTask
             guard let self, !Task.isCancelled else { return }
-            // Library mode: typed replies stream as text AND are read aloud.
-            let prompt = regions.isEmpty ? t : t + "\n\n" + Self.regionNote
-            await self.respond(to: prompt, display: t, frames: frames, requestId: UUID().uuidString, speak: true, document: document)
+            // Typed replies stream as text AND are read aloud (unless muted).
+            let turn = CompanionTurn(userText: regions.isEmpty ? t : t + "\n\n" + Self.regionNote, display: t, frames: frames,
+                                     document: document, drawing: nil, app: app, speak: true)
+            await self.runUserTurn(turn)
         }
     }
 
@@ -320,18 +375,29 @@ final class CompanionEngine: ObservableObject {
     }
 
     private func interruptResponse() {
-        if realtimeTurn || RealtimeVoiceSession.shared.isConnected { RealtimeVoiceSession.shared.cancelResponse() }
+        // Keep what Awan had already said, so "as you were saying" and "no, the other one" still make sense.
+        if currentTurn != nil {
+            let said = responseText.trimmingCharacters(in: .whitespacesAndNewlines)
+            conversation.closeDanglingToolCalls()
+            if !said.isEmpty {
+                conversation.append(.note("[app] the user cut awan off mid-reply. awan had said: \"\(said.prefix(600))\""))
+                conversation.record("awan", said + " …(cut off)")
+            }
+            currentTurn = nil
+        }
         responseTask?.cancel()
         responseTask = nil
         player.stop()
         isStreaming = false
         pendingVisuals = []
+        setToolStatus(nil)
+        conversation.closeDanglingToolCalls()
         CursorOverlayController.shared.showCursorBubble(nil)
     }
 
     // MARK: - Speaking a line
 
-    /// Speaks a short line (agents, billing, tips). Skipped while the user is on a call; waits if Awan is busy.
+    /// Speaks a short fixed line (billing, tips). Skipped while the user is on a call; waits if Awan is busy.
     func announce(_ line: String) {
         let l = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !l.isEmpty else { return }
@@ -359,177 +425,219 @@ final class CompanionEngine: ObservableObject {
         if Prefs.shared.showUpdatesBesideCursor, !OnboardingController.shared.isShowing { CursorOverlayController.shared.showCursorBubble(line) }
     }
 
-    // MARK: - The response pipeline
+    // MARK: - Agent updates (through the conversation)
 
-    struct RespondBody: Encodable {
-        var transcript: String
-        var images: [[String: String]]
-        var history: [CompanionExchange]
+    /// An Awan finished or needs the user. The update goes into the conversation (so a later "what did it find?"
+    /// works) and, unless Awan should stay quiet, the voice model tells the user in its own words.
+    func agentUpdate(slug: String, name: String, summary: String?, spoken: String?, files: [String], needsYou: Bool, speak: Bool) {
+        let what = (summary ?? spoken ?? "finished").trimmingCharacters(in: .whitespacesAndNewlines)
+        var note = "[awan update] \(name) (awan_slug: \(slug)) \(needsYou ? "needs the user: " : "just finished: ")\"\(what)\""
+        if !files.isEmpty { note += " files: \(files.prefix(4).map { ($0 as NSString).lastPathComponent }.joined(separator: ", "))." }
+        conversation.record("event", "\(name) \(needsYou ? "needs you" : "finished"): \(what)")
+        guard speak else {
+            conversation.ensureSession()
+            conversation.append(.note(note + " (the user was busy, so this wasn't announced. if they ask, answer from it.)"))
+            return
+        }
+        note += needsYou
+            ? " tell the user in one short sentence, in your own voice, what \(name) needs and that they can say yes or no. nothing else."
+            : " tell the user in one or two short sentences, in your own voice, what \(name) made or found, keeping its specifics. if a file opened by itself, say it's open. no question at the end. nothing else."
+        if voiceState != .idle || player.isActive || isTextComposerOpen {
+            pendingAgentUpdates.append(note)
+            return
+        }
+        speakAgentUpdate(note)
+    }
+
+    private func speakAgentUpdate(_ note: String) {
+        turnIsText = false
+        responseText = ""
+        setVoice(.processing)
+        let turn = CompanionTurn(userText: nil, display: "", frames: [], document: nil, drawing: nil, app: Self.userFrontApp(), speak: true)
+        responseTask?.cancel()
+        responseTask = Task { [weak self] in
+            await self?.runNoteTurn(turn, note: note, toolChoice: "none")
+        }
+    }
+
+    // MARK: - The conversation turn
+
+    /// A user turn: context notes + the user's words (+ screenshots when the screen changed), then model rounds.
+    func runUserTurn(_ turn: CompanionTurn) async {
+        let convo = conversation
+        convo.ensureSession()
+        var notes: [String] = [CompanionNotes.time()]
+        if let n = CompanionNotes.app(turn.app), convo.lastNotes["app"] != n { notes.append(n); convo.lastNotes["app"] = n }
+        let roster = CompanionNotes.awans(lastViewed: lastViewedAgent)
+        if convo.lastNotes["awans"] != roster { notes.append(roster); convo.lastNotes["awans"] = roster }
+        if let p = CompanionNotes.progress(since: lastTurnAt) { notes.append(p) }
+        if let h = CompanionNotes.home(), convo.lastNotes["home"] != h { notes.append(h); convo.lastNotes["home"] = h }
+        if !AppState.shared.isHomeOpen { convo.lastNotes["home"] = nil }
+        if let s = CompanionNotes.suggestions() { notes.append(s) }
+        if let doc = turn.document {
+            let n = CompanionNotes.document(doc)
+            if convo.lastNotes["document"] != n { notes.append(n); convo.lastNotes["document"] = n }
+        }
+        if let d = turn.drawing { notes.append(d) }
+        lastTurnAt = Date()
+        for n in notes { convo.append(.note(n)) }
+        convo.append(.utterance(turn.userText ?? "", images: screensToAttach(turn)))
+        convo.record("user", turn.display)
+        await runRounds(turn, countUsage: true, toolChoice: "auto")
+    }
+
+    /// A turn the app starts (an agent update, a walkthrough step, a follow-up acknowledgement): a note, then rounds.
+    func runNoteTurn(_ turn: CompanionTurn, note: String, toolChoice: String) async {
+        conversation.ensureSession()
+        conversation.append(.note(CompanionNotes.time()))
+        conversation.append(.note(note))
+        await runRounds(turn, countUsage: false, toolChoice: toolChoice)
+    }
+
+    /// Screenshots go into the conversation only when the screen changed since the model last saw it.
+    private func screensToAttach(_ turn: CompanionTurn) -> [ScreenCaptureFrame] {
+        guard !turn.frames.isEmpty else { return [] }
+        let prints = turn.frames.map { CompanionNotes.fingerprint($0.image) }
+        let unchanged = turn.drawing == nil && CompanionNotes.sameScreens(prints, conversation.lastScreenFingerprints)
+            && Date().timeIntervalSince(conversation.lastScreenAt ?? .distantPast) < 10 * 60
+        if unchanged { return [] }
+        conversation.lastScreenFingerprints = prints
+        conversation.lastScreenAt = Date()
+        return turn.frames
+    }
+
+    private struct TurnBody: Encodable {
+        var items: [JSON]
+        var context: JSON
+        var capabilities: [String]
         var requestId: String
-        var context: String?
-        /// The document open in the front window (whole-document context), when the question is about it.
-        var document: [String: String]?
-        /// Slugs of the active Skills (the server adds an `<active_skills>` block); nil = the account's set.
-        var activeSkills: [String]?
+        var countUsage: Bool
+        var toolChoice: String
     }
 
-    /// Builds the request for a turn (also used by `--companion-selftest`).
-    static func requestBody(transcript: String, frames: [ScreenCaptureFrame], history: [CompanionExchange], requestId: String, document: ActiveDocument? = nil) -> RespondBody {
-        RespondBody(transcript: transcript, images: frames.map(\.requestImage), history: Array(history.suffix(historyLimit)),
-                    requestId: requestId, context: contextBlock(), document: document?.requestBody,
-                    activeSkills: SkillsStore.shared.companionSlugs)
-    }
-
-    /// Reads the front window's document when the question plausibly refers to it (else nil, no latency).
-    static func readDocumentIfAsked(_ question: String, app: NSRunningApplication?) async -> ActiveDocument? {
-        guard ActiveDocumentReader.refersToDocument(question), let app else { return nil }
-        let doc = await ActiveDocumentReader.read(app: app)
-        if let doc { Log.info("companion: reading \(doc.kind) \"\(doc.name)\" (\(doc.text.count) chars, \(doc.source))") }
-        return doc
-    }
-
-    /// PROFILE.md + VOLATILE.md (if present) + the current local time.
-    static func contextBlock() -> String {
-        var parts: [String] = []
-        for name in ["PROFILE.md", "VOLATILE.md"] {
-            let url = Paths.memory.appendingPathComponent(name)
-            if let s = try? String(contentsOf: url, encoding: .utf8), !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                parts.append("<\(name)>\n\(s.prefix(6000))\n</\(name)>")
-            }
-        }
-        let f = DateFormatter()
-        f.dateFormat = "EEEE d MMMM yyyy, h:mm a zzz"
-        parts.append("[current local time: \(f.string(from: Date()))]")
-        return parts.joined(separator: "\n\n")
-    }
-
-    static func captureFrames() async -> [ScreenCaptureFrame] {
-        do { return try await ScreenCapture.captureAll() } catch {
-            Log.error("screen capture: \(error.localizedDescription)")
-            return []
-        }
-    }
-
-    private func respond(to prompt: String, display: String, frames: [ScreenCaptureFrame], requestId: String, speak: Bool, document: ActiveDocument? = nil) async {
+    /// Streams model rounds until the model answers without calling a tool (or a cap is hit).
+    private func runRounds(_ turn: CompanionTurn, countUsage: Bool, toolChoice firstChoice: String) async {
+        currentTurn = turn
         let muted = SystemAudio.isMuted
-        let voice = speak && !muted
-        let geometries = frames.map(\.geometry)
-        let body = Self.requestBody(transcript: prompt, frames: frames, history: history, requestId: requestId, document: document)
-        var chunker = SentenceChunker()
-        var streamed = ""
+        let voice = turn.speak && !muted
         pendingVisuals = []
         sentencesStarted = -1
         clearTask?.cancel()
         isStreaming = true
         responseText = ""
         if voice { player.begin(serverSpeech: AppState.shared.serverFeatures.serverSpeech) }
-
+        turn.voice = voice
+        var reply = ""
+        var choice = firstChoice
         do {
-            for try await (event, data) in APIClient.shared.events("v1/companion/respond", body: body) {
-                if Task.isCancelled { return }
-                let json = (try? JSONSerialization.jsonObject(with: Data(data.utf8))) as? [String: Any] ?? [:]
-                switch event {
-                case "delta":
-                    let d = json["text"] as? String ?? ""
-                    streamed += d
-                    responseText = CompanionTagParser.stripTags(streamed).trimmingCharacters(in: .whitespacesAndNewlines)
-                    if voice { chunker.push(d).map(CompanionTagParser.stripTags).forEach(player.enqueue) }
-                case "done":
-                    let raw = json["text"] as? String ?? streamed
-                    var reply = CompanionTagParser.parse(raw)
-                    if reply.tags.isEmpty, let pts = json["points"] as? [[String: Any]] {
-                        reply.tags = pts.compactMap { p in
-                            guard let x = p["x"] as? Double, let y = p["y"] as? Double else { return nil }
-                            return CompanionTag(visual: .point(x: x, y: y, label: p["label"] as? String), screen: p["screen"] as? Int, spokenOffset: reply.spokenText.count)
-                        }
+            for round in 1 ... Self.roundCap {
+                var text = ""
+                var calls: [ToolCallItem] = []
+                var chunker = SentenceChunker()
+                let body = TurnBody(items: conversation.wireItems(), context: promptContext(muted: muted), capabilities: CompanionTools.capabilities,
+                                    requestId: turn.id, countUsage: countUsage && round == 1, toolChoice: round == Self.roundCap ? "none" : choice)
+                for try await (event, data) in APIClient.shared.events("v1/companion/turn", body: body) {
+                    if Task.isCancelled { return }
+                    let json = (try? JSONSerialization.jsonObject(with: Data(data.utf8))) as? [String: Any] ?? [:]
+                    switch event {
+                    case "delta":
+                        let d = json["text"] as? String ?? ""
+                        text += d
+                        responseText = Self.joinReply(reply, text)
+                        if voice { chunker.push(d).forEach(player.enqueue) }
+                    case "tool_call":
+                        calls.append(ToolCallItem(id: json["id"] as? String ?? UUID().uuidString, name: json["name"] as? String ?? "", arguments: json["arguments"] as? String ?? "{}"))
+                    case "error":
+                        throw APIError.transport(json["error"] as? String ?? "The reply broke off.")
+                    default:
+                        break
                     }
-                    if reply.agentTask == nil { reply.agentTask = json["agentTask"] as? String }
-                    responseText = reply.spokenText
-                    isStreaming = false
-                    if voice, let rest = chunker.flush() { player.enqueue(CompanionTagParser.stripTags(rest)) }
-                    finishTurn(reply, display: display, requestId: requestId, geometries: geometries, voice: voice, muted: muted && speak)
-                    return
-                case "error":
-                    throw APIError.transport(json["error"] as? String ?? "The reply broke off.")
-                default:
-                    break
                 }
+                if voice, let rest = chunker.flush() { player.enqueue(rest) }
+                let said = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                reply = Self.joinReply(reply, said)
+                conversation.append(ConversationItem(role: .assistant, kind: .reply, text: said.isEmpty ? nil : said, toolCalls: calls))
+                bindDeferredVisuals(turn)
+                if calls.isEmpty || Task.isCancelled { break }
+
+                // Run the tools; screenshots they take go in after all the results.
+                if voiceState == .responding { setVoice(.processing) }
+                var attachments: [ConversationItem] = []
+                for call in calls {
+                    if Task.isCancelled { return }
+                    turn.toolCalls += 1
+                    setToolStatus(CompanionTools.statusLabel(call))
+                    Log.info("companion tool: \(call.name) \(call.arguments.prefix(300))")
+                    let out = await CompanionTools.run(call, turn: turn, engine: self)
+                    if Task.isCancelled { return }
+                    conversation.append(ConversationItem(role: .tool, kind: .toolResult, text: out.result, toolCallID: call.id))
+                    attachments += out.attachments
+                }
+                setToolStatus(nil)
+                for a in attachments { conversation.append(a) }
+                choice = turn.toolCalls >= Self.toolCallCap ? "none" : "auto"
             }
-            // Stream ended without `done`.
             isStreaming = false
-            if voice { if let rest = chunker.flush() { player.enqueue(rest) }; player.finishInput() } else { setVoice(.idle) }
+            finishTurn(turn, reply: reply, voice: voice, muted: muted)
         } catch {
             guard !Task.isCancelled else { return }
             isStreaming = false
+            setToolStatus(nil)
+            conversation.closeDanglingToolCalls()
             player.stop()
             handleFailure(error)
         }
     }
 
-    private func finishTurn(_ reply: ParsedReply, display: String, requestId: String, geometries: [CaptureGeometry], voice: Bool, muted: Bool) {
-        history.append(CompanionExchange(user: display, assistant: reply.spokenText))
-        if history.count > Self.historyLimit { history.removeFirst(history.count - Self.historyLimit) }
+    static func joinReply(_ a: String, _ b: String) -> String {
+        let x = a.trimmingCharacters(in: .whitespacesAndNewlines), y = b.trimmingCharacters(in: .whitespacesAndNewlines)
+        if x.isEmpty { return y }
+        if y.isEmpty { return x }
+        return x + " " + y
+    }
 
-        // Resolve visuals and bind each to the sentence it belongs to.
-        let total = max(1, reply.spokenText.count)
-        let sentenceEnds = cumulativeSentenceFractions()
-        var target: CompanionTag?
-        for tag in reply.tags {
-            if tag.visual.isTarget {
-                if guidedStepsLeft() <= 0 { continue }
-                if target != nil { continue }
-                target = tag
-            }
-            guard let resolved = CompanionVisualMapper.resolve(tag, in: geometries) else { continue }
-            let fraction = Double(tag.anchorOffset) / Double(total)
-            let sentence = voice ? (sentenceEnds.firstIndex { fraction < $0 } ?? max(0, sentenceEnds.count - 1)) : 0
-            pendingVisuals.append((sentence, resolved))
-        }
-        if !voice || player.sentences.isEmpty { fireVisuals(upTo: Int.max) } else { fireVisuals(upTo: sentencesStarted) }
-
-        // Pictures under the notch.
-        if let q = reply.imagesQuery { ImageAnswerCard.shared.show(query: q) }
-
-        // Type into the user's field.
-        if let request = reply.typeRequest { typeForUser(request, geometries: geometries) }
-
-        // Hand work to an Awan.
-        if let task = reply.agentTask {
-            if let name = sendToAwan(task, slug: nil, display: display, announce: false) {
-                if voice { player.enqueue("sending that to \(name).") }
-            }
-        }
-
-        // Guided walkthrough: arm the target and wait for the click.
-        if let target {
-            guided = guided ?? Guided(goal: display, requestId: requestId, completed: [])
-            guidedStep += 1
-            CursorOverlayController.shared.onTargetHit = { [weak self] label in
-                Task { @MainActor in self?.guidedTargetHit(label ?? target.visual.label) }
-            }
-        } else if guided != nil {
-            // No further target: the walkthrough is complete.
-            guided = nil
-            guidedStep = 0
-            CursorOverlayController.shared.onTargetHit = nil
-        }
-
-        if voice {
+    private func finishTurn(_ turn: CompanionTurn, reply: String, voice: Bool, muted: Bool) {
+        currentTurn = nil
+        responseText = reply
+        if !reply.isEmpty { conversation.record("awan", reply) }
+        fireVisuals(upTo: voice && !player.sentences.isEmpty ? sentencesStarted : Int.max)
+        if voice, !player.sentences.isEmpty {
             player.finishInput()
         } else {
+            if voice { player.stop() }
             setVoice(.idle)
-            if muted, !turnIsText {
+            if muted, turn.speak, !turnIsText, !reply.isEmpty {
                 NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(reply.spokenText, forType: .string)
+                NSPasteboard.general.setString(reply, forType: .string)
                 NotchController.shared.present(.unmuteFallback, for: 8)
             }
             scheduleClear()
-            if turnIsText { scheduleTextDismiss() }
+            if turnIsText, !Self.headless { scheduleTextDismiss() }
+            drainQueuedSpeech()
         }
+    }
+
+    /// The session context the server renders into the instructions.
+    func promptContext(muted: Bool) -> JSON {
+        let connectors = ConnectorStore.shared.connectors
+        let skills = SkillsStore.shared.activeItems.map { ["name": .string($0.title), "oneLiner": .string($0.oneLiner)] as JSON }
+        var ctx: [String: JSON] = [
+            "timeZone": .string(TimeZone.current.identifier),
+            "connectedIntegrations": .array(connectors.filter { $0.status == "connected" }.map { .string($0.name) }),
+            "needsReconnectIntegrations": .array(connectors.filter { $0.status == "needsSignIn" || $0.status == "rejected" }.map { .string($0.name) }),
+            "activeSkills": .array(skills),
+            "shortcuts": ["talk": "hold control + option", "text": "double-tap control", "dictation": "hold fn + control"],
+            "priorMessageCount": .number(Double(conversation.priorMessageCount)),
+            "alwaysOn": .bool(Prefs.shared.alwaysOnVoice),
+            "muted": .bool(muted),
+        ]
+        if let name = AppState.shared.user?.firstName, !name.isEmpty { ctx["userFirstName"] = .string(name) }
+        return .object(ctx)
     }
 
     private func handleFailure(_ error: Error) {
         Log.error("companion: \(error.localizedDescription)")
+        currentTurn = nil
         setVoice(.idle)
         if case APIError.quotaExceeded = error {
             AppState.shared.presentPaywall(.limitHit)
@@ -542,7 +650,15 @@ final class CompanionEngine: ObservableObject {
         } else {
             responseText = "hmm, I couldn't reach my brain just now. try again in a sec."
         }
+        if Self.headless { return }
         if turnIsText { scheduleTextDismiss() } else { NotchController.shared.present(.message(responseText), for: 5) }
+    }
+
+    func setToolStatus(_ s: String?) {
+        if toolStatus != s { toolStatus = s }
+        if Self.headless { return }
+        if let s, Prefs.shared.showUpdatesBesideCursor, !turnIsText { CursorOverlayController.shared.showCursorBubble(s) }
+        else if s == nil, voiceState == .processing { CursorOverlayController.shared.showCursorBubble(nil) }
     }
 
     // MARK: - Speech callbacks
@@ -552,16 +668,32 @@ final class CompanionEngine: ObservableObject {
     }
 
     private func sentenceStarted(_ i: Int) {
+        if voiceState == .processing { setVoice(.responding) }
         sentencesStarted = max(sentencesStarted, i)
         fireVisuals(upTo: i)
     }
 
     private func speechFinished() {
-        if voiceState == .responding || voiceState == .processing { setVoice(.idle) }
+        if voiceState == .responding || voiceState == .processing, currentTurn == nil { setVoice(.idle) }
+        guard currentTurn == nil else { return }   // a tool is still running; more speech is coming
         CursorOverlayController.shared.showCursorBubble(nil)
         fireVisuals(upTo: Int.max)
         scheduleClear()
         if turnIsText { scheduleTextDismiss() }
+        drainQueuedSpeech()
+    }
+
+    /// Queued agent updates first (they go through the conversation), then fixed announcements.
+    private func drainQueuedSpeech() {
+        if !pendingAgentUpdates.isEmpty {
+            let note = pendingAgentUpdates.removeFirst()
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(600))
+                guard let self, self.voiceState == .idle, !self.player.isActive else { self?.pendingAgentUpdates.insert(note, at: 0); return }
+                self.speakAgentUpdate(note)
+            }
+            return
+        }
         if !pendingAnnouncements.isEmpty {
             let next = pendingAnnouncements.removeFirst()
             Task { @MainActor [weak self] in
@@ -571,18 +703,29 @@ final class CompanionEngine: ObservableObject {
         }
     }
 
-    private func cumulativeSentenceFractions() -> [Double] {
-        let lengths = player.sentences.map { Double(max(1, $0.count)) }
-        let sum = lengths.reduce(0, +)
-        guard sum > 0 else { return [] }
-        var acc = 0.0
-        return lengths.map { acc += $0; return acc / sum }
+    /// Binds the visuals a deeper pass produced to the sentences the voice model then spoke (the reference syncs
+    /// drawing beats to playback the same way): a tag's position in the deeper answer picks the sentence.
+    private func bindDeferredVisuals(_ turn: CompanionTurn) {
+        guard !turn.deferredVisuals.isEmpty else { return }
+        let base = turn.deferredSentenceBase
+        let spoken = player.sentences.count - base
+        for v in turn.deferredVisuals {
+            let sentence = turn.voice && spoken > 0 ? base + min(spoken - 1, Int((v.fraction * Double(spoken)).rounded(.down))) : Int.max - 1
+            pendingVisuals.append((turn.voice && spoken > 0 ? sentence : -1, v.visual))
+        }
+        turn.deferredVisuals = []
+        fireVisuals(upTo: max(sentencesStarted, -1))
     }
 
-    private func fireVisuals(upTo sentence: Int) {
+    /// Every visual shown this process (self-tests read it).
+    private(set) var firedVisuals: [ResolvedVisual] = []
+
+    func fireVisuals(upTo sentence: Int) {
         let due = pendingVisuals.filter { $0.sentence <= sentence }
         guard !due.isEmpty else { return }
         pendingVisuals.removeAll { $0.sentence <= sentence }
+        firedVisuals += due.map(\.visual)
+        if Self.headless { return }
         let points = due.compactMap { if case let .point(p) = $0.visual { return p } else { return nil } }
         let annotations = due.compactMap { if case let .annotation(a) = $0.visual { return a } else { return nil } }
         if !annotations.isEmpty { CursorOverlayController.shared.annotate(annotations) }
@@ -592,7 +735,7 @@ final class CompanionEngine: ObservableObject {
     /// Highlights and shapes clear a moment after Awan stops talking (an armed target stays).
     private func scheduleClear() {
         clearTask?.cancel()
-        guard guided == nil else { return }
+        guard guided == nil, !Self.headless else { return }
         clearTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(2.5))
             guard !Task.isCancelled, let self, self.guided == nil, self.voiceState == .idle else { return }
@@ -636,84 +779,70 @@ final class CompanionEngine: ObservableObject {
         NotchController.shared.dismissSurface()
     }
 
-    // MARK: - Typing ([TYPE]…[/TYPE])
+    // MARK: - Screens and documents
 
-    private func typeForUser(_ request: CompanionTypeRequest, geometries: [CaptureGeometry]) {
-        var point: CGPoint?
-        if let x = request.x, let y = request.y {
-            let tag = CompanionTag(visual: .point(x: x, y: y, label: request.label), screen: request.screen, spokenOffset: 0)
-            if case let .point(p)? = CompanionVisualMapper.resolve(tag, in: geometries) { point = p.point }
-        }
-        let app = turnApp
-        Task { @MainActor [weak self] in
-            let result = await CompanionTyper.type(request, into: app, at: point)
-            Log.info("companion typed: \(result)")
-            self?.reportTyping(result, text: request.text)
+    static func captureFrames() async -> [ScreenCaptureFrame] {
+        do { return try await ScreenCapture.captureAll() } catch {
+            Log.error("screen capture: \(error.localizedDescription)")
+            return []
         }
     }
 
-    private func reportTyping(_ result: CompanionTyper.Result, text: String) {
-        switch result {
-        case .typed, .nothingToType:
-            break
-        case .refusedSecure:
-            speakLine("that's a password field, so that one's yours to type.")
-        case let .refusedApp(name):
-            speakLine("i don't type into \(name). that stays yours.")
-        case .refusedAddressBar:
-            TextInserter.copy(text)
-            NotchController.shared.present(.message("That's the address bar, so I put it on your clipboard instead."), for: 5)
-        case .clipboard:
-            NotchController.shared.present(.message("Copied to your clipboard. Paste it where you want it."), for: 5)
+    /// The front window's document (whole text), read while the user talks. Gives up after 2.5 s (a folder-access
+    /// prompt can hold the read) so the turn never waits on it.
+    static func readActiveDocument(app: NSRunningApplication?) async -> ActiveDocument? {
+        guard let app else { return nil }
+        let doc = await withTaskGroup(of: ActiveDocument?.self) { group -> ActiveDocument? in
+            group.addTask { await ActiveDocumentReader.read(app: app) }
+            group.addTask { try? await Task.sleep(for: .seconds(2.5)); return nil }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
         }
+        if let doc { Log.info("companion: front document \(doc.kind) \"\(doc.name)\" (\(doc.text.count) chars, \(doc.source))") }
+        return doc
     }
 
-    // MARK: - Realtime voice
+    /// Reads the front window's document when the question plausibly refers to it (else nil, no latency).
+    static func readDocumentIfAsked(_ question: String, app: NSRunningApplication?) async -> ActiveDocument? {
+        guard ActiveDocumentReader.refersToDocument(question), let app else { return nil }
+        return await ActiveDocumentReader.read(app: app)
+    }
 
-    /// A push-to-talk turn on OpenAI Realtime: the audio was streamed while the key was held; now commit it,
-    /// attach the screenshots, play the answer's audio as it arrives and act on its tags when it's done.
-    private func respondRealtime(note: String?, display: String, frames: [ScreenCaptureFrame], document: ActiveDocument?, requestId: String) async {
-        let muted = SystemAudio.isMuted
-        let geometries = frames.map(\.geometry)
-        pendingVisuals = []
-        sentencesStarted = -1
-        clearTask?.cancel()
-        isStreaming = true
-        responseText = ""
-        if !muted { player.begin(serverSpeech: true) }
-        var texts: [String] = []
-        if let note { texts.append(note) }
-        if let document, let block = Self.documentText(document) { texts.append(block) }
-        var transcript = ""
-        var toolTags: [String] = []
-        do {
-            let images = frames.map { (label: $0.label, jpeg: $0.jpeg) }
-            for try await event in RealtimeVoiceSession.shared.finishTurn(images: images, texts: texts, context: Self.contextBlock()) {
-                if Task.isCancelled { return }
-                switch event {
-                case let .audioDelta(pcm): if !muted { player.playPCM16(pcm) }
-                case let .transcriptDelta(d):
-                    transcript += d
-                    responseText = CompanionTagParser.stripTags(transcript).trimmingCharacters(in: .whitespacesAndNewlines)
-                case let .transcriptDone(t): if !t.isEmpty { transcript = t }
-                case let .functionCall(name, _, args):
-                    if name == RealtimeCodec.toolName, let tags = RealtimeCodec.tagsArgument(args) { toolTags.append(tags) }
-                default: break
-                }
+    /// PROFILE.md + VOLATILE.md (if present) + the current local time (the deeper pass and legacy /respond).
+    static func contextBlock() -> String {
+        var parts: [String] = []
+        for name in ["PROFILE.md", "VOLATILE.md"] {
+            let url = Paths.memory.appendingPathComponent(name)
+            if let s = try? String(contentsOf: url, encoding: .utf8), !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                parts.append("<\(name)>\n\(s.prefix(6000))\n</\(name)>")
             }
-            let reply = Self.realtimeReply(transcript: transcript, toolTags: toolTags)
-            responseText = reply.spokenText
-            isStreaming = false
-            finishTurn(reply, display: display, requestId: requestId, geometries: geometries, voice: !muted, muted: muted)
-        } catch {
-            guard !Task.isCancelled else { return }
-            isStreaming = false
-            player.stop()
-            handleFailure(error)
         }
+        let f = DateFormatter()
+        f.dateFormat = "EEEE d MMMM yyyy, h:mm a zzz"
+        parts.append("[current local time: \(f.string(from: Date()))]")
+        return parts.joined(separator: "\n\n")
     }
 
-    /// The spoken transcript plus the tags that came through `show_on_screen` (anchored at the end).
+    // MARK: - Legacy single-shot body (self-tests, onboarding demo)
+
+    struct RespondBody: Encodable {
+        var transcript: String
+        var images: [[String: String]]
+        var history: [CompanionExchange]
+        var requestId: String
+        var context: String?
+        var document: [String: String]?
+        var activeSkills: [String]?
+    }
+
+    static func requestBody(transcript: String, frames: [ScreenCaptureFrame], history: [CompanionExchange], requestId: String, document: ActiveDocument? = nil) -> RespondBody {
+        RespondBody(transcript: transcript, images: frames.map(\.requestImage), history: Array(history.suffix(historyLimit)),
+                    requestId: requestId, context: contextBlock(), document: document?.requestBody,
+                    activeSkills: SkillsStore.shared.companionSlugs)
+    }
+
+    /// The spoken transcript plus tags that came through a realtime tool (anchored at the end).
     static func realtimeReply(transcript: String, toolTags: [String]) -> ParsedReply {
         var reply = CompanionTagParser.parse(transcript)
         for tags in toolTags {
@@ -737,8 +866,28 @@ final class CompanionEngine: ObservableObject {
 
     // MARK: - Guided walkthrough
 
-    private func guidedStepsLeft() -> Int { Self.maxGuidedSteps - guidedStep }
+    func guidedStepsLeft() -> Int { Self.maxGuidedSteps - guidedStep }
 
+    /// Arms a walkthrough target from a deeper-pass answer.
+    func armGuided(goal: String, label: String?) {
+        guided = guided ?? Guided(goal: goal, completed: [])
+        guidedStep += 1
+        if Self.headless { return }
+        CursorOverlayController.shared.onTargetHit = { [weak self] hit in
+            Task { @MainActor in self?.guidedTargetHit(hit ?? label) }
+        }
+    }
+
+    /// The walkthrough has no further target: it's complete.
+    func endGuidedIfDone() {
+        guard guided != nil else { return }
+        guided = nil
+        guidedStep = 0
+        if !Self.headless { CursorOverlayController.shared.onTargetHit = nil }
+    }
+
+    /// The user clicked the armed target: the deeper pass looks at the new screen and plans the next step, then the
+    /// voice model says it (one step per click, like the reference's click-to-advance loop).
     private func guidedTargetHit(_ label: String?) {
         guard var g = guided else { return }
         CursorOverlayController.shared.onTargetHit = nil
@@ -750,15 +899,20 @@ final class CompanionEngine: ObservableObject {
         let prompt = Self.guidedStepPrompt(step: step, label: label, goal: g.goal, completed: g.completed)
         setVoice(.processing)
         turnIsText = false
+        let app = Self.userFrontApp()
         responseTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(450)) // let the click's effect render
             let frames = await Self.captureFrames()
             guard let self, !Task.isCancelled else { return }
-            await self.respond(to: prompt, display: "[Guided step \(step) done]", frames: frames, requestId: g.requestId, speak: true)
+            let turn = CompanionTurn(userText: nil, display: "", frames: frames, document: nil, drawing: nil, app: app, speak: true)
+            turn.guidedGoal = g.goal
+            let note = await CompanionTools.guidedNote(prompt: prompt, step: step, turn: turn, engine: self)
+            guard !Task.isCancelled else { return }
+            await self.runNoteTurn(turn, note: note, toolChoice: "none")
         }
     }
 
-    /// The follow-up sent after the user clicks an armed [TARGET] (same requestId → the walkthrough costs one talk).
+    /// The follow-up sent after the user clicks an armed [TARGET] (the whole walkthrough costs one talk).
     static func guidedStepPrompt(step: Int, label: String?, goal: String, completed: [String]) -> String {
         let remaining = maxGuidedSteps - step
         return """
@@ -783,6 +937,16 @@ final class CompanionEngine: ObservableObject {
 
     // MARK: - Agents
 
+    /// Words spoken to a specific Awan (notch/HUD follow-up): delivered to it, and Awan acknowledges in one line.
+    private func followUp(_ words: String, to slug: String) async {
+        guard let name = sendToAwan(words, slug: slug, display: words, announce: false) else { setVoice(.idle); return }
+        conversation.record("user", words)
+        conversation.record("event", "(delivered to \(name) as a follow-up)")
+        let turn = CompanionTurn(userText: nil, display: words, frames: [], document: nil, drawing: nil, app: turnApp, speak: true)
+        let note = "[app] the user just spoke a follow-up to \(name), and awan already delivered their exact words to it: \"\(words.prefix(400))\". in ONE short warm sentence, acknowledge it in first person as if you're on it, reflecting back what they asked (\"on it, i'll make that page brighter.\"). don't mention agents or passing it along, don't do the task or answer it, and don't ask a question."
+        await runNoteTurn(turn, note: note, toolChoice: "none")
+    }
+
     /// Sends work to an Awan (`slug` nil = pick the best one). Returns the Awan's name.
     @discardableResult
     func sendToAwan(_ task: String, slug: String?, display: String, announce: Bool) -> String? {
@@ -793,7 +957,7 @@ final class CompanionEngine: ObservableObject {
         }
         guard store.send(task, to: chosen, display: display, source: "voice") != nil else { return nil }
         Sounds.play(.agentLaunch)
-        Log.info("companion → \(chosen): \(task)")
+        Log.info("companion → \(chosen): \(task.prefix(200))")
         if announce { speakLine("sending that to \(agent.name).") }
         return agent.name
     }
@@ -834,7 +998,7 @@ final class CompanionEngine: ObservableObject {
     }
 
     private func alwaysOnLevel(_ level: Float) {
-        if voiceState == .listening { audioLevel = level }
+        if voiceState == .listening { audioLevel = level; if level > peakLevel { peakLevel = level } }
         guard let event = vad.feed(level: level, at: ProcessInfo.processInfo.systemUptime) else { return }
         switch event {
         case .speechStarted:
@@ -864,8 +1028,43 @@ final class CompanionEngine: ObservableObject {
         textDismissAt = streaming ? nil : Date().addingTimeInterval(8)
     }
 
-    private func setVoice(_ s: VoiceState) {
+    func setVoice(_ s: VoiceState) {
         if voiceState != s { voiceState = s }
-        CursorOverlayController.shared.setVoiceState(s)
+        if !Self.headless { CursorOverlayController.shared.setVoiceState(s) }
     }
 }
+
+/// Everything one turn knows (screens, document, drawing), shared by its model rounds and its tools.
+@MainActor
+final class CompanionTurn {
+    let id = UUID().uuidString
+    /// The user's words for the model (nil for app-started turns).
+    let userText: String?
+    /// What the user said, as shown and recorded.
+    let display: String
+    var frames: [ScreenCaptureFrame]
+    var document: ActiveDocument?
+    var drawing: String?
+    let app: NSRunningApplication?
+    let speak: Bool
+    var voice = false
+    var toolCalls = 0
+    /// Visuals from a deeper pass, waiting to be bound to the sentences the voice model speaks next.
+    var deferredVisuals: [(fraction: Double, visual: ResolvedVisual)] = []
+    var deferredSentenceBase = 0
+    /// Set for walkthrough steps (the goal the deeper pass keeps working toward).
+    var guidedGoal: String?
+
+    init(userText: String?, display: String, frames: [ScreenCaptureFrame], document: ActiveDocument?, drawing: String?, app: NSRunningApplication?, speak: Bool) {
+        self.userText = userText
+        self.display = display
+        self.frames = frames
+        self.document = document
+        self.drawing = drawing
+        self.app = app
+        self.speak = speak
+    }
+
+    var geometries: [CaptureGeometry] { frames.map(\.geometry) }
+}
+

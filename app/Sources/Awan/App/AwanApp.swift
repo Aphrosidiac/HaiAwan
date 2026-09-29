@@ -8,6 +8,9 @@ enum Main {
             MainActor.assumeIsolated { _ = NSApplication.shared; if Snapshots.run(CommandLine.arguments) { exit(0) } }
         }
         MainActor.assumeIsolated { AgentSelfTest.runIfRequested(CommandLine.arguments) } // agents builder: --agent-selftest
+        if CommandLine.arguments.contains(where: { $0 == "--voice-selftest" || $0 == "--voice-live" }) {
+            _ = MainActor.assumeIsolated { CompanionVoiceSelfTest.runIfRequested(CommandLine.arguments) }
+        }
         if CommandLine.arguments.contains(where: { $0 == "--selftest" || $0 == "--companion-selftest" }) {
             MainActor.assumeIsolated { _ = NSApplication.shared; _ = CompanionSelfTest.runIfRequested(CommandLine.arguments) }
         }
@@ -54,6 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         MorningSuggestions.shared.start()
         HotkeyMonitor.shared.start()
         if CommandLine.arguments.contains("--hotkey-selftest") { HotkeyMonitor.selfTest() }
+        if CommandLine.arguments.contains("--mic-selftest") { DispatchQueue.main.asyncAfter(deadline: .now() + 1) { AudioCapture.selfTest() } }
         NotchExtras.start()   // wave 2: meetings, integration suggestions, "App updated"
         PaywallWindowController.shared.install()
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { HomeWindowController.shared.prewarm() }

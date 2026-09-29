@@ -196,6 +196,7 @@ final class AppState: ObservableObject {
         user = nil
         signInState = .signedOut
         plan = .placeholder
+        CompanionConversation.shared.clear()   // the next account doesn't inherit this voice conversation
     }
 
     func deleteAccount() async {
@@ -205,6 +206,7 @@ final class AppState: ObservableObject {
             user = nil
             signInState = .signedOut
             agents.wipeAll()
+            CompanionConversation.shared.clear()
             prefs.onboardingCompleted = false
         } catch { show(error) }
     }

@@ -127,6 +127,26 @@ final class AudioCapture: @unchecked Sendable {
         if let onLevel { DispatchQueue.main.async { onLevel(out) } }
     }
 
+    /// `Awan --mic-selftest`: record 2 s from the talk mic and log what actually arrived. All-zero samples mean
+    /// macOS is blanking the input (privacy), no buffers mean the engine never ran; real rooms are never exactly 0.
+    static func selfTest() {
+        let mic = AudioCapture(deviceUID: nil)
+        var buffers = 0, peakRMS: Float = 0, nonZero = 0
+        let lock = NSLock()
+        mic.onBuffer = { b in
+            let r = rms(b)
+            lock.withLock { buffers += 1; peakRMS = max(peakRMS, r); if r > 0 { nonZero += 1 } }
+        }
+        let fmt = mic.engine.inputNode.outputFormat(forBus: 0)
+        do { try mic.start() } catch { Log.error("mic selftest: start failed: \(error.localizedDescription)"); return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            let pcm = mic.stop()
+            let (b, p, nz) = lock.withLock { (buffers, peakRMS, nonZero) }
+            let db = p > 0 ? String(format: "%.1f dB", 20 * log10(p)) : "digital silence"
+            Log.info("mic selftest: \(b) buffers (\(nz) non-silent), peak \(db), \(Int(fmt.sampleRate)) Hz × \(fmt.channelCount), \(String(format: "%.2f", duration(ofPCM16: pcm))) s recorded, permission \(microphoneStatus.rawValue)")
+        }
+    }
+
     /// Root-mean-square amplitude of the first channel (0…1).
     static func rms(_ buffer: AVAudioPCMBuffer) -> Float {
         let n = Int(buffer.frameLength)

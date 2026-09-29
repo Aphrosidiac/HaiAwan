@@ -22,6 +22,8 @@ final class TalkTranscriber: @unchecked Sendable {
     private var ended = false
     private var waitClosed = false
     private(set) var usingAppleSpeech = false
+    /// Apple Speech failed for a reason other than "no speech detected" (then the server may transcribe instead).
+    private var appleFailed = false
 
     /// Apple Speech is usable right now (authorized + a recognizer for the locale).
     static var appleSpeechAvailable: Bool {
@@ -66,7 +68,8 @@ final class TalkTranscriber: @unchecked Sendable {
 
     /// Ends the audio and returns the best transcript. Waits ≤1.8 s for Apple's final result,
     /// then uses the server when Apple produced nothing (or wasn't used).
-    func finish(pcm16: Data) async -> String {
+    /// `allowServerFallback` false = never send the audio to the server (the caller knows nothing was said).
+    func finish(pcm16: Data, allowServerFallback: Bool = true) async -> String {
         let req: SFSpeechAudioBufferRecognitionRequest? = lock.withLock { ended = true; return request }
         var text = ""
         if let req {
@@ -76,7 +79,9 @@ final class TalkTranscriber: @unchecked Sendable {
             task?.finish()
         }
         text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if text.isEmpty, AudioCapture.duration(ofPCM16: pcm16) >= 0.35 {
+        // Apple Speech ran and heard no words: that's the answer. Only when it couldn't run does the server transcribe.
+        let failed = lock.withLock { appleFailed }
+        if text.isEmpty, req == nil || failed, allowServerFallback, AudioCapture.duration(ofPCM16: pcm16) >= 0.35 {
             do { text = try await Self.transcribeOnServer(pcm16: pcm16) } catch { Log.error("server transcribe failed: \(error.localizedDescription)") }
         }
         return text
@@ -112,8 +117,11 @@ final class TalkTranscriber: @unchecked Sendable {
             if result.isFinal { deliverFinal(text) }
             return
         }
-        if error != nil {
-            lock.lock(); let t = latest; lock.unlock()
+        if let error {
+            // 1110 = "No speech detected": a real answer, not a failure.
+            let ns = error as NSError
+            let noSpeech = ns.domain == "kAFAssistantErrorDomain" && ns.code == 1110
+            lock.lock(); let t = latest; if !noSpeech && t.isEmpty { appleFailed = true }; lock.unlock()
             deliverFinal(t)
         }
     }

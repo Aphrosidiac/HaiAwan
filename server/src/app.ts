@@ -32,6 +32,7 @@ import { dissolveTeamsOf, registerTeamRoutes } from './teams.ts';
 import { ConnectorVault, parseConnectorKey, registerConnectorRoutes, type FetchLike, type GoogleOAuthClient } from './connectors.ts';
 import { mailerFromEnv, signInEmail, type Mailer } from './mailer.ts';
 import { composioFromEnv, registerComposioRoutes } from './composio.ts';
+import { DEEPER_SYSTEM, sanitizeItems, streamRound, TOOL_LIMIT_NOTE, toolsFor, voiceInstructions, webSearch, type PromptContext, type RoundEvent } from './companion.ts';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -46,6 +47,12 @@ export type AppOptions = {
   siteUrl?: string;
   /** Override the dictation clean-up model call (tests). */
   dictationModel?: (input: CleanupInput) => Promise<string>;
+  /** Override the voice model's streamed round (tests). */
+  voiceRound?: (req: { messages: unknown[]; tools: string[]; toolChoice: 'auto' | 'none' }) => AsyncGenerator<RoundEvent>;
+  /** Override the deeper pass (tests). Returns the raw reply with tags. */
+  deeperModel?: (messages: ChatMessage[]) => Promise<string>;
+  /** Override the web lookup (tests). */
+  webSearch?: (query: string) => Promise<string>;
   /** Override the image search providers and the image check (tests). */
   imageSearch?: ImageSearchDeps;
   /** Override the skill-writing model call behind POST /v1/skills/create (tests). */
@@ -454,6 +461,113 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     } finally {
       raw.end();
     }
+  });
+
+  /**
+   * The voice companion, v2: one model round over the conversation the app keeps (see src/companion.ts).
+   * The app sends the whole live conversation (its user turns, replies, tool calls/results and context notes)
+   * and the session context; the server adds the instructions and the tool schemas and streams:
+   *   event: delta      data: {"text": "..."}                   spoken text as it arrives
+   *   event: tool_call  data: {"id","name","arguments"}         one per call, after the text of the round
+   *   event: done       data: {"finish": "stop"|"tool_calls"|…}
+   *   event: error      data: {"error": "..."}
+   * A talk is spent once per user turn: `countUsage` on its first round, keyed on requestId.
+   */
+  app.post('/v1/companion/turn', async (req, reply) => {
+    const body = req.body as { items?: unknown; context?: PromptContext; capabilities?: string[]; requestId?: string; countUsage?: boolean; toolChoice?: 'auto' | 'none' };
+    const items = sanitizeItems(body.items);
+    if (!items.length) return reply.code(400).send({ error: 'empty_conversation' });
+    const u = me(req);
+    if (body.countUsage) consume(db, u.id, 'talk', body.requestId);
+    const tools = toolsFor(body.capabilities);
+    const toolChoice = body.toolChoice === 'none' ? 'none' : 'auto';
+    const messages = [{ role: 'system', content: voiceInstructions(body.context) }, ...items];
+    if (toolChoice === 'none') messages.push({ role: 'user', content: `[app] ${TOOL_LIMIT_NOTE}` });
+
+    reply.hijack();
+    const raw = reply.raw;
+    raw.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
+    const send = (event: string, data: unknown) => raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    const abort = new AbortController();
+    raw.on('close', () => {
+      if (!raw.writableFinished) abort.abort();
+    });
+    try {
+      const model = process.env.VOICE_MODEL || llm.models.fast;
+      send('route', { model });
+      const rounds = opts.voiceRound
+        ? opts.voiceRound({ messages, tools: tools.map((t) => t.function.name), toolChoice })
+        : streamRound({ model, messages, tools, toolChoice, signal: abort.signal });
+      for await (const ev of rounds) {
+        if (ev.type === 'text') send('delta', { text: ev.text });
+        else if (ev.type === 'tool_call') send('tool_call', { id: ev.call.id, name: ev.call.function.name, arguments: ev.call.function.arguments });
+        else send('done', { finish: ev.reason });
+      }
+    } catch (err) {
+      if (!abort.signal.aborted) send('error', { error: err instanceof Error ? err.message : String(err) });
+    } finally {
+      raw.end();
+    }
+  });
+
+  /**
+   * The deeper pass behind the voice model's `ask_deeper` tool: a frontier vision model with the full screenshots,
+   * the open document, the user's drawing, a bounded slice of the conversation and the active skills. Answers in
+   * the tag protocol (pointing, drawing, walkthrough targets, typing, pictures, agent hand-off); the app parses the
+   * tags from `text` and acts on them. No talk is spent: the turn that called it already paid.
+   */
+  app.post('/v1/companion/deeper', async (req, reply) => {
+    const body = req.body as {
+      question?: string;
+      focus?: string;
+      images?: { data: string; label: string; mime?: string }[];
+      document?: { name?: string; text?: string; kind?: string };
+      drawing?: string;
+      conversation?: { role: string; text: string }[];
+      activeSkills?: string[];
+      appContext?: string;
+      guided?: boolean;
+    };
+    const question = body.question?.trim();
+    if (!question) return reply.code(400).send({ error: 'empty_question' });
+    const u = me(req);
+    const parts: Exclude<ChatContent, string> = [];
+    for (const img of (body.images ?? []).slice(0, 4)) {
+      if (typeof img?.data !== 'string' || !img.data) continue;
+      parts.push({ type: 'text', text: String(img.label ?? '').slice(0, 300) });
+      parts.push({ type: 'image_url', image_url: { url: `data:${img.mime ?? 'image/jpeg'};base64,${img.data}`, detail: 'high' } });
+    }
+    const doc = documentBlock(body.document);
+    if (doc) parts.push({ type: 'text', text: doc });
+    const block = activeSkillsBlock(companionSkills(db, u.id, body.activeSkills));
+    if (block) parts.push({ type: 'text', text: block });
+    const convo = (body.conversation ?? [])
+      .filter((m) => m && typeof m.text === 'string' && m.text.trim())
+      .slice(-12)
+      .map((m) => `${m.role === 'assistant' ? 'awan' : 'user'}: ${m.text.replace(/\s+/g, ' ').slice(0, 600)}`);
+    if (convo.length) parts.push({ type: 'text', text: `recent conversation (oldest first, for context only):\n${convo.join('\n')}` });
+    if (body.appContext?.trim()) parts.push({ type: 'text', text: body.appContext.trim().slice(0, 600) });
+    if (body.drawing?.trim()) parts.push({ type: 'text', text: body.drawing.trim().slice(0, 1200) });
+    if (body.focus?.trim() && !body.guided) parts.push({ type: 'text', text: `(what they mean: ${body.focus.trim().slice(0, 400)})` });
+    parts.push({ type: 'text', text: question.slice(0, 8000) });
+    const messages: ChatMessage[] = [{ role: 'system', content: DEEPER_SYSTEM }, { role: 'user', content: parts }];
+    const started = Date.now();
+    const text = opts.deeperModel
+      ? await opts.deeperModel(messages)
+      : await complete({ model: llm.models.companion, messages, maxTokens: 1400, temperature: 0.4 });
+    const parsed = parseAssistantTags(text);
+    return { text, spokenText: parsed.spokenText, agentTask: parsed.agentTask, imagesQuery: parsed.imagesQuery, typeText: parsed.typeText, model: llm.models.companion, ms: Date.now() - started };
+  });
+
+  /** The voice model's web_search tool. */
+  app.post('/v1/companion/search', async (req, reply) => {
+    const body = req.body as { query?: string; locale?: string; timeZone?: string };
+    const q = String(body?.query ?? '').trim();
+    if (!q) return reply.code(400).send({ error: 'empty_query' });
+    if (q.length > 400) return reply.code(413).send({ error: 'too_long' });
+    me(req);
+    const answer = opts.webSearch ? await opts.webSearch(q) : await webSearch(q, undefined, { locale: body.locale?.slice(0, 20), timeZone: body.timeZone?.slice(0, 60) });
+    return { query: q, answer };
   });
 
   /** Streams 24 kHz mono PCM16 (`audio/L16`) for the given text and voice. */

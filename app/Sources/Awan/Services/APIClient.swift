@@ -96,9 +96,12 @@ enum APIError: LocalizedError {
 final class APIClient: @unchecked Sendable {
     static let shared = APIClient()
 
-    var baseURL: URL { URL(string: UserDefaults.standard.string(forKey: Prefs.Key.apiBaseURL) ?? "http://127.0.0.1:8787")! }
+    var baseURL: URL { URL(string: baseURLOverride ?? UserDefaults.standard.string(forKey: Prefs.Key.apiBaseURL) ?? "http://127.0.0.1:8787")! }
+    /// Self-tests: talk to this server with this token instead of the signed-in session.
+    var baseURLOverride: String?
+    var tokenOverride: String?
     var token: String? {
-        get { Keychain.get("session") }
+        get { tokenOverride ?? Keychain.get("session") }
         set { Keychain.set(newValue, for: "session") }
     }
 
@@ -268,7 +271,7 @@ enum JSON: Codable, Hashable {
     var array: [JSON]? { if case let .array(a) = self { return a } else { return nil } }
 }
 
-extension JSON: ExpressibleByStringLiteral, ExpressibleByDictionaryLiteral, ExpressibleByArrayLiteral, ExpressibleByBooleanLiteral, ExpressibleByIntegerLiteral, ExpressibleByFloatLiteral {
+extension JSON: ExpressibleByStringLiteral, ExpressibleByStringInterpolation, ExpressibleByDictionaryLiteral, ExpressibleByArrayLiteral, ExpressibleByBooleanLiteral, ExpressibleByIntegerLiteral, ExpressibleByFloatLiteral {
     init(stringLiteral value: String) { self = .string(value) }
     init(dictionaryLiteral elements: (String, JSON)...) { self = .object(Dictionary(uniqueKeysWithValues: elements)) }
     init(arrayLiteral elements: JSON...) { self = .array(elements) }

@@ -139,6 +139,11 @@ flowchart TB
 
 - **One provider key.** The API holds a single OpenRouter key that powers the companion (vision + chat), speech,
   transcription, dictation clean-up and the agent model. Keys never ship in the app.
+- **The companion** keeps one ongoing conversation per session. Each turn adds silent context notes (time, front app,
+  your Awans, Home, the open document, what you circled) and screenshots when the screen changed. A fast voice model
+  answers and calls tools on the Mac (start or steer an Awan, search, remember, type, open). It hands anything
+  screen-exact to a frontier vision pass, which points, draws, runs walkthroughs and types.
+  See [docs/companion-architecture.md](docs/companion-architecture.md).
 - **Agents** run on the vendored OpenAI Codex CLI (`app-server` mode) with its model provider pointed at the Awan API,
   so usage is metered per plan. Each Awan gets its own workspace folder, skills and MCP tools.
 - **Computer use** is a local MCP server inside the app (accessibility tree + CGEvent input), reachable only from
@@ -280,7 +285,9 @@ cd app
 swift build -c release
 .build/release/Awan --selftest                    # UI + state checks
 .build/release/Awan --onboarding-selftest
-.build/release/Awan --companion-selftest          # live companion round-trip (needs the API)
+.build/release/Awan --voice-selftest              # voice conversation: notes, memory, silence gate, hand-off
+.build/release/Awan --voice-live --fake-screen "where's the export button?"   # live multi-turn run, dry-run tools (needs the API)
+.build/release/Awan --companion-selftest          # live single-shot deeper pass (needs the API)
 .build/release/Awan --dictation-selftest file.wav # transcription + clean-up on a recording
 
 # Headless snapshots of any surface, rendered to PNG

@@ -534,9 +534,13 @@ final class AgentRunner {
         guard !headless else { return }
         Sounds.play(needsYou ? .agentNeedsYou : .agentDone)
         let prefs = Prefs.shared
-        if prefs.speakAgentUpdates, !CompanionEngine.shared.agentUpdatesHeldBack, let line = spoken ?? summary {
-            CompanionEngine.shared.announce(line)
-        }
+        // Into the voice conversation (so "what did it find?" works later); spoken by the voice model unless Awan
+        // should stay quiet. Routine runs land silently.
+        let lastTurn = store.thread(slug).turns.last
+        let companion = CompanionEngine.shared
+        companion.agentUpdate(slug: slug, name: agent.name, summary: summary, spoken: spoken,
+                              files: lastTurn?.artifacts.map(\.path) ?? [], needsYou: needsYou,
+                              speak: prefs.speakAgentUpdates && !companion.isQuiet && lastTurn?.source != "routine")
         NotchController.shared.present(.agentFinished(slug))
         if prefs.showUpdatesBesideCursor, let summary { CursorOverlayController.shared.showCursorBubble("\(agent.name): \(summary)") }
         // Like the reference, the first listed deliverable opens by itself (routine runs stay quiet in the chat).
@@ -902,6 +906,5 @@ final class AgentRunner {
 
 extension CompanionEngine {
     /// Whether spoken agent updates should wait (calls, Focus, the user talking to Awan).
-    /// Companion builder: once `isQuiet` lands on CompanionEngine, return `isQuiet` here.
     var agentUpdatesHeldBack: Bool { isQuiet || voiceState != .idle }
 }
