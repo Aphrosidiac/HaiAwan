@@ -63,7 +63,8 @@ final class AnnotationModel: ObservableObject {
 
 @MainActor
 final class TrailModel: ObservableObject {
-    @Published var points: [CGPoint] = []
+    /// One stroke per click-drag made while the talk keys are held (global points).
+    @Published var strokes: [[CGPoint]] = []
     @Published var opacity: Double = 1
     @Published var color: Color = Theme.lime
 }

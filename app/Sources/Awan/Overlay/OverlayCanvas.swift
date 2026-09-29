@@ -70,16 +70,18 @@ struct TrailLayer: View {
     @ObservedObject var model: TrailModel
 
     var body: some View {
-        if model.points.count > 1 {
-            let path = Sketch.freehand(model.points.map(map.local))
-            ZStack {
-                FixedPathShape(path: path)
-                    .stroke(model.color.opacity(0.16), style: StrokeStyle(lineWidth: 16, lineCap: .round, lineJoin: .round))
-                FixedPathShape(path: path)
-                    .stroke(model.color.opacity(0.55), style: StrokeStyle(lineWidth: 6.5, lineCap: .round, lineJoin: .round))
+        ZStack {
+            ForEach(model.strokes.indices, id: \.self) { i in
+                if model.strokes[i].count > 1 {
+                    let path = Sketch.freehand(model.strokes[i].map(map.local))
+                    FixedPathShape(path: path)
+                        .stroke(model.color.opacity(0.16), style: StrokeStyle(lineWidth: 16, lineCap: .round, lineJoin: .round))
+                    FixedPathShape(path: path)
+                        .stroke(model.color.opacity(0.55), style: StrokeStyle(lineWidth: 6.5, lineCap: .round, lineJoin: .round))
+                }
             }
-            .opacity(model.opacity)
         }
+        .opacity(model.opacity)
     }
 }
 

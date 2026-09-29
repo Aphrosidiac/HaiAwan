@@ -295,10 +295,10 @@ private struct OverlaySnapshotAnnotations: View {
         let t = TrailModel()
         t.color = CursorColor.lime.color
         // A quick scribble around the sidebar's second item, as a user would while talking.
-        t.points = stride(from: 0.0, through: 5.6, by: 0.18).map { a in
+        t.strokes = [stride(from: 0.0, through: 5.6, by: 0.18).map { a in
             let r = 34 + 5 * sin(a * 2.3)
             return g(170 + CGFloat(cos(a) * r * 1.6), 250 + CGFloat(sin(a) * r * 0.8))
-        }
+        }]
         return t
     }
 

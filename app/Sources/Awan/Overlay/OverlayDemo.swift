@@ -50,7 +50,7 @@ enum OverlayDemo {
                 try? await Task.sleep(for: .milliseconds(50))
             }
             let trail = overlay.endSpatialTrail()
-            Log.info("overlay demo: trail \(trail.count) points")
+            Log.info("overlay demo: trail \(trail.count) strokes")
             overlay.setVoiceState(.processing)
             try? await Task.sleep(for: .seconds(2))
             overlay.setVoiceState(.idle)

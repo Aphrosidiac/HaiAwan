@@ -78,6 +78,8 @@ import CoreGraphics
     private func removeTap() {
         if let tap { CGEvent.tapEnable(tap: tap, enable: false); CFMachPortInvalidate(tap) }   // also ends the tap thread
         Self.livePort = nil
+        Self.tapIsActive = false
+        Self.penSwallowing = false
         tap = nil; tapSource = nil
         hasPermission = false
     }
@@ -107,6 +109,14 @@ import CoreGraphics
 
     /// The live tap, for re-enabling it from the tap thread when macOS switches it off after a slow callback.
     nonisolated(unsafe) private static var livePort: CFMachPort?
+    /// Read on the tap thread. `penArmed`: a talk hold is on, so clicks draw instead of reaching apps.
+    /// `penSwallowing`: the current click's down was taken, so its drags and up are taken too.
+    /// `tapIsActive`: only an active tap can hold a click back; a listen-only one never draws.
+    nonisolated(unsafe) private static var penArmed = false
+    nonisolated(unsafe) private static var penSwallowing = false
+    nonisolated(unsafe) private static var tapIsActive = false
+
+    static func setPenArmed(_ on: Bool) { penArmed = on }
 
     /// With Accessibility the tap is an active filter (`.defaultTap`), which macOS lets see keys typed in every app;
     /// a listen-only tap would need Input Monitoring for that. It never changes or swallows an event: the callback
@@ -116,10 +126,22 @@ import CoreGraphics
     @discardableResult
     private func installTap() -> Bool {
         guard tap == nil else { return true }
-        let types: [CGEventType] = [.flagsChanged, .keyDown, .keyUp]
+        let types: [CGEventType] = [.flagsChanged, .keyDown, .keyUp, .leftMouseDown, .leftMouseDragged, .leftMouseUp]
         let mask = types.reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << $1.rawValue) }
         let callback: CGEventTapCallBack = { _, type, event, _ in
             switch type {
+            case .leftMouseDown:
+                guard HotkeyMonitor.penArmed, HotkeyMonitor.tapIsActive else { return Unmanaged.passUnretained(event) }
+                HotkeyMonitor.penSwallowing = true
+                DispatchQueue.main.async { MainActor.assumeIsolated { CursorOverlayController.shared.penChanged(true) } }
+                return nil
+            case .leftMouseDragged:
+                return HotkeyMonitor.penSwallowing ? nil : Unmanaged.passUnretained(event)
+            case .leftMouseUp:
+                guard HotkeyMonitor.penSwallowing else { return Unmanaged.passUnretained(event) }
+                HotkeyMonitor.penSwallowing = false
+                DispatchQueue.main.async { MainActor.assumeIsolated { CursorOverlayController.shared.penChanged(false) } }
+                return nil
             case .tapDisabledByTimeout, .tapDisabledByUserInput:
                 if let port = HotkeyMonitor.livePort { CGEvent.tapEnable(tap: port, enable: true) }
             case .flagsChanged, .keyDown, .keyUp:
@@ -138,8 +160,11 @@ import CoreGraphics
             CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: options,
                               eventsOfInterest: mask, callback: callback, userInfo: nil)
         }
-        let active = AXIsProcessTrusted()
-        guard let port = (active ? create(.defaultTap) : nil) ?? create(.listenOnly) else {
+        var active = AXIsProcessTrusted()
+        var made = active ? create(.defaultTap) : nil
+        if made == nil { active = false; made = create(.listenOnly) }
+        Self.tapIsActive = active
+        guard let port = made else {
             if !usingFallback { Log.info("hotkeys: couldn't create the event tap — using fallback monitors") }
             hasPermission = false
             return false

@@ -49,6 +49,8 @@ enum Annotation: Hashable {
     var flightQueue: [ScreenPoint] = []
     var flightGeneration = 0
     var trailRecording = false
+    /// The mouse button is down inside a talk hold: the pointer is drawing a stroke.
+    var penDown = false
     var hoverDwell: [UUID: CFTimeInterval] = [:]
 
     var bubbleHideTask: Task<Void, Never>?
@@ -130,27 +132,41 @@ enum Annotation: Hashable {
         }
     }
 
-    /// While the talk key is held the pointer leaves a paint trail; returns the stroke (global coords).
+    /// While the talk keys are held, click-and-drag draws on the screen (the hotkey tap keeps those clicks from
+    /// reaching the app underneath). Moving the pointer alone draws nothing.
     func beginSpatialTrail() {
         install()
         trailFadeTask?.cancel()
         trailRecording = true
+        penDown = false
         trail.opacity = 1
-        trail.points = [NSEvent.mouseLocation]
+        trail.strokes = []
+        HotkeyMonitor.setPenArmed(true)
         ensureTicking()
     }
 
-    func endSpatialTrail() -> [CGPoint] {
+    /// The hotkey tap saw the mouse button go down / up during a talk hold.
+    func penChanged(_ down: Bool) {
+        guard trailRecording else { penDown = false; return }
+        penDown = down
+        if down { trail.strokes.append([NSEvent.mouseLocation]); ensureTicking() }
+    }
+
+    /// Ends drawing; returns the strokes (global coords) with more than one point.
+    func endSpatialTrail() -> [[CGPoint]] {
+        HotkeyMonitor.setPenArmed(false)
         guard trailRecording else { return [] }
         trailRecording = false
-        let points = trail.points
+        penDown = false
+        let strokes = trail.strokes.filter { $0.count > 1 }
+        if !strokes.isEmpty { Log.info("drawing: \(strokes.count) stroke(s), \(strokes.map(\.count).reduce(0, +)) points") }
         withAnimation(.easeOut(duration: 0.9)) { trail.opacity = 0 }
         trailFadeTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(0.95))
             guard !Task.isCancelled, let self, !self.trailRecording else { return }
-            self.trail.points = []
+            self.trail.strokes = []
         }
-        return points.count > 1 ? points : []
+        return strokes
     }
 
     /// Re-read Prefs (colour, docked) — called when Settings change.

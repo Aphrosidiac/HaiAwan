@@ -235,7 +235,7 @@ extension CursorOverlayController {
         }
         if buddy.catMode { updateCatPose() }
 
-        if trailRecording {
+        if trailRecording && penDown {
             appendTrail(mouse)
             busy = true
         }
@@ -514,12 +514,11 @@ extension CursorOverlayController {
     // MARK: - Spatial trail
 
     private func appendTrail(_ mouse: CGPoint) {
-        guard let last = trail.points.last else {
-            trail.points = [mouse]
+        guard let last = trail.strokes.last?.last else {
+            trail.strokes.append([mouse])
             return
         }
-        guard hypot(mouse.x - last.x, mouse.y - last.y) >= 2 else { return }
-        if trail.points.count > 4000 { trail.points.removeFirst(trail.points.count - 4000) }
-        trail.points.append(mouse)
+        guard hypot(mouse.x - last.x, mouse.y - last.y) >= 2, trail.strokes[trail.strokes.count - 1].count < 4000 else { return }
+        trail.strokes[trail.strokes.count - 1].append(mouse)
     }
 }

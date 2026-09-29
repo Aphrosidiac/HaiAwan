@@ -61,7 +61,7 @@ struct TutorialCopy {
         case .drawDemo:
             return .init(title: "I can point at things", subtitle: "I see what you see. Hold the keys, ask me to point at something, and watch your cursor fly.")
         case .drawToAsk:
-            return .init(title: "Circle it, then ask", subtitle: "Hold the keys, draw a loop around something with your cursor, and ask me about it.")
+            return .init(title: "Circle it, then ask", subtitle: "Hold the keys, click and drag a loop around something, and ask me about it.")
         case .textMode:
             return .init(title: "Rather type?", subtitle: "Double-tap Control and a text box opens right under the notch. Handy in a quiet room.")
         case .emailDraft:

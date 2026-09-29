@@ -207,8 +207,9 @@ final class CompanionEngine: ObservableObject {
             var frames = await capture?.value ?? []
             let document = await docTask
             var prompt = transcript
-            if ScreenCapture.isMeaningfulTrail(trail), let i = frames.firstIndex(where: { $0.isCursorScreen }) {
-                frames[i] = ScreenCapture.drawTrail(trail, on: frames[i])
+            let marks = trail.filter(ScreenCapture.isMeaningfulTrail)
+            if !marks.isEmpty, let i = frames.firstIndex(where: { $0.isCursorScreen }) {
+                for stroke in marks { frames[i] = ScreenCapture.drawTrail(stroke, on: frames[i]) }
                 prompt += "\n\n(the user circled/scribbled on the highlighted area — the translucent lime stroke on screen \(frames[i].index) — while talking; that's what \"this\"/\"here\" refers to.)"
             }
             if self.realtimeTurn, RealtimeVoiceSession.isEnabled {
