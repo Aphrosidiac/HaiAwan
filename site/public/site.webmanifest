@@ -1,7 +1,7 @@
 {
-  "name": "Awan",
-  "short_name": "Awan",
-  "description": "A little cloud that lives on your Mac. By FF Dev Studio.",
+  "name": "Hai Awan",
+  "short_name": "Hai Awan",
+  "description": "A little cloud that lives on your Mac. Open source, by FF Dev Studio.",
   "start_url": "/",
   "display": "browser",
   "background_color": "#F3EFE4",

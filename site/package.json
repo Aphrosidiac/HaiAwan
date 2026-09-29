@@ -2,14 +2,15 @@
   "name": "awan-site",
   "private": true,
   "version": "0.1.0",
-  "description": "Marketing site for Awan — an AI buddy that lives on your Mac. By FF Dev Studio.",
+  "description": "Website for Hai Awan (the Awan app) \u2014 an open-source AI buddy that lives on your Mac. By FF Dev Studio.",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --port 5192 --strictPort",
     "og": "node scripts/og.mjs",
-    "verify": "node scripts/verify.mjs"
+    "verify": "node scripts/verify.mjs",
+    "deploy": "bash scripts/deploy.sh"
   },
   "devDependencies": {
     "@types/node": "^26.6.3",

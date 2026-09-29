@@ -2,11 +2,11 @@
 <html lang="en">
 <head>
 <!-- @include head -->
-<title>Awan — a little cloud that lives on your Mac</title>
-<meta name="description" content="Awan is an AI buddy for your Mac by FF Dev Studio. Hold Control + Option and ask out loud: it sees your screen, answers, points at the answer, types your dictation, and sends work to agents while you do something else.">
+<title>Hai Awan — a little cloud that lives on your Mac</title>
+<meta name="description" content="Hai Awan is a free, open-source AI buddy for your Mac by FF Dev Studio. Hold Control + Option and ask out loud: it sees your screen, answers, points at the answer, types your dictation, and sends work to agents while you do something else.">
 <link rel="canonical" href="https://awan.ffdev.studio/">
-<meta property="og:title" content="Awan — a little cloud that lives on your Mac">
-<meta property="og:description" content="Hold Control + Option, ask out loud, and Awan sees your screen, points at the answer, and runs agents for you. By FF Dev Studio.">
+<meta property="og:title" content="Hai Awan — a little cloud that lives on your Mac">
+<meta property="og:description" content="Hold Control + Option, ask out loud, and Awan sees your screen, points at the answer, and runs agents for you. Open source, by FF Dev Studio.">
 <meta property="og:url" content="https://awan.ffdev.studio/">
 <link rel="stylesheet" href="/src/styles/base.css">
 <link rel="stylesheet" href="/src/styles/home.css">
@@ -28,17 +28,31 @@
       "@type": "SoftwareApplication",
       "@id": "https://awan.ffdev.studio/#app",
       "name": "Awan",
+      "alternateName": "Hai Awan",
       "description": "An AI buddy that lives on your Mac. Talk to it with a hotkey, it sees your screen, points at the answer, types your dictation and runs agents for you.",
       "applicationCategory": "ProductivityApplication",
       "operatingSystem": "macOS 14 Sonoma or later",
       "url": "https://awan.ffdev.studio/",
       "image": "https://awan.ffdev.studio/img/app-icon-512.png",
       "publisher": { "@id": "https://ffdev.studio/#org" },
+      "isAccessibleForFree": true,
+      "sameAs": "https://github.com/Aphrosidiac/HaiAwan",
       "offers": [
         { "@type": "Offer", "name": "Free", "price": "0", "priceCurrency": "USD" },
         { "@type": "Offer", "name": "Pro", "price": "20", "priceCurrency": "USD", "description": "per month, billed monthly; $16/month billed yearly" },
         { "@type": "Offer", "name": "Max", "price": "100", "priceCurrency": "USD", "description": "per month, billed monthly; $80/month billed yearly" }
       ]
+    },
+    {
+      "@type": "SoftwareSourceCode",
+      "@id": "https://github.com/Aphrosidiac/HaiAwan",
+      "name": "HaiAwan",
+      "description": "The full source of Awan: the macOS app, its API server and this website.",
+      "codeRepository": "https://github.com/Aphrosidiac/HaiAwan",
+      "license": "https://opensource.org/licenses/MIT",
+      "programmingLanguage": ["Swift", "TypeScript"],
+      "targetProduct": { "@id": "https://awan.ffdev.studio/#app" },
+      "author": { "@id": "https://ffdev.studio/#org" }
     }
   ]
 }
@@ -140,19 +154,19 @@
         <div class="demo-sub on" aria-hidden="true">hold control + option, and just ask.</div>
         <button class="play-cta liquid-glass" type="button" id="demo-play"><span class="gloss"></span><svg aria-hidden="true"><use href="#i-play"/></svg><span>play demo</span></button>
       </div>
-      <span class="win-caption">hello-awan.mov</span>
+      <span class="win-caption">hai-awan.mov</span>
     </div>
 
     <div class="abs headline-wrap no-fade" id="hero-center">
       <div class="referral-chip" id="referral-chip" hidden><span class="referral-chip-avatar" id="referral-av">F</span><span><strong id="referral-name">fakhrul</strong> gave you 25% off your first month of pro or max</span></div>
       <div class="head-group">
-        <h1 class="headline" id="hero-title">awan</h1>
+        <h1 class="headline" id="hero-title">hai awan</h1>
         <p class="subtitle">a little cloud that lives on your mac</p>
       </div>
       <div class="btns">
         <div class="btn-col">
           <a class="btn lime" href="/download/" data-ref-link><span class="gloss"></span><svg aria-hidden="true"><use href="#i-down"/></svg><span>download for mac</span></a>
-          <span class="btn-sub">free to start. macos 14 sonoma or later</span>
+          <span class="btn-sub">free and <a href="https://github.com/Aphrosidiac/HaiAwan" rel="noopener">open source</a>. macos 14 sonoma or later</span>
         </div>
         <div class="btn-col">
           <a class="btn bone" href="#big-video" id="watch-demo"><span class="gloss"></span><svg aria-hidden="true"><use href="#i-play"/></svg><span>watch it work</span></a>
@@ -274,7 +288,7 @@
           <p>we think that's an interface problem, not a model problem.</p>
           <p>so we're building a little cloud that sits on your mac, sees what you see when you ask, and <span class="ink">talks, points and does the work, without a chat window or a terminal.</span></p>
           <p>we're a small studio in malaysia and this is our first product of our own.</p>
-          <p>it's early. try it, break it, tell us what felt off.<span class="car">|</span></p>
+          <p>it's early, and it's all open source. read it, fork it, break it, tell us what felt off.<span class="car">|</span></p>
         </div>
         <div class="sign">
           <a class="who" href="https://ffdev.studio" rel="noopener"><img src="/img/app-icon-192.png" alt="" width="40" height="40" loading="lazy"><span class="name"><span class="a">fakhrul,</span><span class="b">ff dev studio</span></span></a>
@@ -294,7 +308,7 @@
     <div class="fb-wall" id="fb-wall"></div>
     <div class="fb-banner reveal">
       <img class="fb-banner-thumb" src="/img/app-icon-192.png" alt="" width="102" height="102" loading="lazy">
-      <p class="fb-banner-text">awan is in private beta. <a class="fb-banner-link" href="/download/" data-ref-link>get on the list</a></p>
+      <p class="fb-banner-text">hai awan is fully open source. <a class="fb-banner-link" href="https://github.com/Aphrosidiac/HaiAwan" rel="noopener">read the code on github</a></p>
     </div>
     <p class="fb-note">these are illustrative asks written by ff dev studio, not customer reviews.</p>
   </section>
@@ -306,8 +320,8 @@
     <div class="pr-inner">
       <div class="pr-header">
         <span class="plabel">PRICING</span>
-        <h2 class="pr-title" id="pr-title">awan, your way</h2>
-        <p class="pr-sub">three simple plans, cancel anytime.</p>
+        <h2 class="pr-title" id="pr-title">hai awan, your way</h2>
+        <p class="pr-sub">the code is free and open source. plans cover the hosted models, voices and agents.</p>
       </div>
       <div class="pr-toggle" role="radiogroup" aria-label="billing period" id="pr-toggle">
         <span class="pr-seg-pill" id="pr-pill" aria-hidden="true"><span class="pr-seg-pill-inner"></span><span class="pr-seg-gloss"></span></span>
@@ -393,7 +407,7 @@
                 <p class="pr-builder-title">&lt; student discount &gt;<span class="pr-builder-caret"></span></p>
                 <p class="pr-builder-sub">if you're a student, show us your school email or student id and we'll take 50% off your first month of pro *</p>
               </div>
-              <a class="btn bone pr-builder-btn" href="mailto:hello@ffdev.studio?subject=Awan%20student%20discount"><span class="gloss"></span><span>reach out to us</span></a>
+              <a class="btn bone pr-builder-btn" href="mailto:hello@ffdev.studio?subject=Hai%20Awan%20student%20discount"><span class="gloss"></span><span>reach out to us</span></a>
             </div>
           </div>
         </div>
@@ -408,29 +422,31 @@
     <div class="faq-topline" aria-hidden="true"></div>
     <span class="plabel faq-plabel">FAQ</span>
     <h2 class="faq-title" id="faq-title">frequently asked questions</h2>
-    <p class="faq-sub">what to know about awan, privacy, and getting started.</p>
+    <p class="faq-sub">what to know about hai awan, privacy, open source and getting started.</p>
     <span class="faq-side keycap-card reveal" aria-hidden="true"><span class="kc-row"><kbd>⌃</kbd><kbd>⌥</kbd></span><small>hold to talk</small></span>
     <div class="faq-list" id="faq-list">
-      <div class="faq-item open"><h3><button class="faq-row" type="button" aria-expanded="true" aria-controls="faq-a1" id="faq-q1"><span class="faq-q">what is awan?</span><svg class="faq-icon" aria-hidden="true"><use href="#i-plus"/></svg></button></h3>
-        <div class="faq-a-wrap" id="faq-a1" role="region" aria-labelledby="faq-q1"><div class="faq-a-clip"><p class="faq-a">a little cloud that lives on your mac. hold control + option and it sees what you see, so you can ask anything out loud. it answers, points at the answer on your screen, or hands the job to one of your awans (your agents) to get it done.</p></div></div></div>
-      <div class="faq-item"><h3><button class="faq-row" type="button" aria-expanded="false" aria-controls="faq-a2" id="faq-q2"><span class="faq-q">is my data private?</span><svg class="faq-icon" aria-hidden="true"><use href="#i-plus"/></svg></button></h3>
-        <div class="faq-a-wrap" id="faq-a2" role="region" aria-labelledby="faq-q2"><div class="faq-a-clip"><p class="faq-a">yes. awan only looks at your screen while you hold the hotkey, and screenshots are never stored: they go to the model, get answered, and are dropped. we keep your account, your usage counts and what your awans need to remember. you can delete your account and everything in it from settings.</p></div></div></div>
-      <div class="faq-item"><h3><button class="faq-row" type="button" aria-expanded="false" aria-controls="faq-a3" id="faq-q3"><span class="faq-q">is awan watching my screen all the time?</span><svg class="faq-icon" aria-hidden="true"><use href="#i-plus"/></svg></button></h3>
-        <div class="faq-a-wrap" id="faq-a3" role="region" aria-labelledby="faq-q3"><div class="faq-a-clip"><p class="faq-a">no. no hotkey, no screenshot. there's no background recording, no keystroke logging and no clipboard reading.</p></div></div></div>
-      <div class="faq-item"><h3><button class="faq-row" type="button" aria-expanded="false" aria-controls="faq-a4" id="faq-q4"><span class="faq-q">what can awan actually do?</span><svg class="faq-icon" aria-hidden="true"><use href="#i-plus"/></svg></button></h3>
-        <div class="faq-a-wrap" id="faq-a4" role="region" aria-labelledby="faq-q4"><div class="faq-a-clip"><p class="faq-a">teach you any app step by step, explain what's on your screen, draw and point right where you need to click, type your dictation into any text box, and run agents that research, write and work inside your apps while you do something else.</p></div></div></div>
-      <div class="faq-item"><h3><button class="faq-row" type="button" aria-expanded="false" aria-controls="faq-a5" id="faq-q5"><span class="faq-q">what's the difference between talk and agents?</span><svg class="faq-icon" aria-hidden="true"><use href="#i-plus"/></svg></button></h3>
-        <div class="faq-a-wrap" id="faq-a5" role="region" aria-labelledby="faq-q5"><div class="faq-a-clip"><p class="faq-a">talk is the conversation: you ask, awan answers out loud and points. agents are your awans doing multi-step work for you, and each message you send an agent counts toward your plan's monthly agent messages.</p></div></div></div>
-      <div class="faq-item"><h3><button class="faq-row" type="button" aria-expanded="false" aria-controls="faq-a6" id="faq-q6"><span class="faq-q">which apps does it work with?</span><svg class="faq-icon" aria-hidden="true"><use href="#i-plus"/></svg></button></h3>
-        <div class="faq-a-wrap" id="faq-a6" role="region" aria-labelledby="faq-q6"><div class="faq-a-clip"><p class="faq-a">anything on your screen. if you can see it, awan can see it. agents can also use tools you connect yourself, through an mcp server or an api key.</p></div></div></div>
-      <div class="faq-item"><h3><button class="faq-row" type="button" aria-expanded="false" aria-controls="faq-a7" id="faq-q7"><span class="faq-q">do i need a mac?</span><svg class="faq-icon" aria-hidden="true"><use href="#i-plus"/></svg></button></h3>
-        <div class="faq-a-wrap" id="faq-a7" role="region" aria-labelledby="faq-q7"><div class="faq-a-clip"><p class="faq-a">for now, yes. awan is mac-only and needs macos 14 sonoma or later. it's in private beta, so <a href="/download/">join the waitlist</a> and we'll send you a build.</p></div></div></div>
-      <div class="faq-item"><h3><button class="faq-row" type="button" aria-expanded="false" aria-controls="faq-a8" id="faq-q8"><span class="faq-q">is it free?</span><svg class="faq-icon" aria-hidden="true"><use href="#i-plus"/></svg></button></h3>
-        <div class="faq-a-wrap" id="faq-a8" role="region" aria-labelledby="faq-q8"><div class="faq-a-clip"><p class="faq-a">you can start free: 25 talks, plenty of dictation and 25 agent messages a month. pro is $20/month and max is $100/month, or 20% less when billed yearly. cancel anytime.</p></div></div></div>
-      <div class="faq-item"><h3><button class="faq-row" type="button" aria-expanded="false" aria-controls="faq-a9" id="faq-q9"><span class="faq-q">what happens if i hit my agent limit?</span><svg class="faq-icon" aria-hidden="true"><use href="#i-plus"/></svg></button></h3>
-        <div class="faq-a-wrap" id="faq-a9" role="region" aria-labelledby="faq-q9"><div class="faq-a-clip"><p class="faq-a">on pro and max, talk and dictation keep working, always. agent messages pause until your next 30-day cycle, or you can move up to max for 1,000 a month.</p></div></div></div>
-      <div class="faq-item"><h3><button class="faq-row" type="button" aria-expanded="false" aria-controls="faq-a10" id="faq-q10"><span class="faq-q">can i cancel anytime?</span><svg class="faq-icon" aria-hidden="true"><use href="#i-plus"/></svg></button></h3>
-        <div class="faq-a-wrap" id="faq-a10" role="region" aria-labelledby="faq-q10"><div class="faq-a-clip"><p class="faq-a">yes. it's month to month with no lock-in. cancel from settings and keep your plan until the end of the cycle you paid for.</p></div></div></div>
+      <div class="faq-item open"><h3><button class="faq-row" type="button" aria-expanded="true" aria-controls="faq-a1" id="faq-q1"><span class="faq-q">what is hai awan?</span><svg class="faq-icon" aria-hidden="true"><use href="#i-plus"/></svg></button></h3>
+        <div class="faq-a-wrap" id="faq-a1" role="region" aria-labelledby="faq-q1"><div class="faq-a-clip"><p class="faq-a">a little cloud that lives on your mac. the app itself is called awan (malay for cloud). hold control + option and it sees what you see, so you can ask anything out loud. it answers, points at the answer on your screen, or hands the job to one of your awans (your agents) to get it done.</p></div></div></div>
+      <div class="faq-item"><h3><button class="faq-row" type="button" aria-expanded="false" aria-controls="faq-a2" id="faq-q2"><span class="faq-q">is hai awan open source?</span><svg class="faq-icon" aria-hidden="true"><use href="#i-plus"/></svg></button></h3>
+        <div class="faq-a-wrap" id="faq-a2" role="region" aria-labelledby="faq-q2"><div class="faq-a-clip"><p class="faq-a">yes, fully. the mac app, the server behind it and this website are all on <a href="https://github.com/Aphrosidiac/HaiAwan" rel="noopener">github</a> under the mit license. read how it works, run it with your own api keys, fork it, or send a fix.</p></div></div></div>
+      <div class="faq-item"><h3><button class="faq-row" type="button" aria-expanded="false" aria-controls="faq-a3" id="faq-q3"><span class="faq-q">is my data private?</span><svg class="faq-icon" aria-hidden="true"><use href="#i-plus"/></svg></button></h3>
+        <div class="faq-a-wrap" id="faq-a3" role="region" aria-labelledby="faq-q3"><div class="faq-a-clip"><p class="faq-a">yes. awan only looks at your screen while you hold the hotkey, and screenshots are never stored: they go to the model, get answered, and are dropped. we keep your account, your usage counts and what your awans need to remember. you can delete your account and everything in it from settings.</p></div></div></div>
+      <div class="faq-item"><h3><button class="faq-row" type="button" aria-expanded="false" aria-controls="faq-a4" id="faq-q4"><span class="faq-q">is awan watching my screen all the time?</span><svg class="faq-icon" aria-hidden="true"><use href="#i-plus"/></svg></button></h3>
+        <div class="faq-a-wrap" id="faq-a4" role="region" aria-labelledby="faq-q4"><div class="faq-a-clip"><p class="faq-a">no. no hotkey, no screenshot. there's no background recording, no keystroke logging and no clipboard reading.</p></div></div></div>
+      <div class="faq-item"><h3><button class="faq-row" type="button" aria-expanded="false" aria-controls="faq-a5" id="faq-q5"><span class="faq-q">what can awan actually do?</span><svg class="faq-icon" aria-hidden="true"><use href="#i-plus"/></svg></button></h3>
+        <div class="faq-a-wrap" id="faq-a5" role="region" aria-labelledby="faq-q5"><div class="faq-a-clip"><p class="faq-a">teach you any app step by step, explain what's on your screen, draw and point right where you need to click, type your dictation into any text box, and run agents that research, write and work inside your apps while you do something else.</p></div></div></div>
+      <div class="faq-item"><h3><button class="faq-row" type="button" aria-expanded="false" aria-controls="faq-a6" id="faq-q6"><span class="faq-q">what's the difference between talk and agents?</span><svg class="faq-icon" aria-hidden="true"><use href="#i-plus"/></svg></button></h3>
+        <div class="faq-a-wrap" id="faq-a6" role="region" aria-labelledby="faq-q6"><div class="faq-a-clip"><p class="faq-a">talk is the conversation: you ask, awan answers out loud and points. agents are your awans doing multi-step work for you, and each message you send an agent counts toward your plan's monthly agent messages.</p></div></div></div>
+      <div class="faq-item"><h3><button class="faq-row" type="button" aria-expanded="false" aria-controls="faq-a7" id="faq-q7"><span class="faq-q">which apps does it work with?</span><svg class="faq-icon" aria-hidden="true"><use href="#i-plus"/></svg></button></h3>
+        <div class="faq-a-wrap" id="faq-a7" role="region" aria-labelledby="faq-q7"><div class="faq-a-clip"><p class="faq-a">anything on your screen. if you can see it, awan can see it. agents can also use tools you connect yourself, through an mcp server or an api key.</p></div></div></div>
+      <div class="faq-item"><h3><button class="faq-row" type="button" aria-expanded="false" aria-controls="faq-a8" id="faq-q8"><span class="faq-q">do i need a mac?</span><svg class="faq-icon" aria-hidden="true"><use href="#i-plus"/></svg></button></h3>
+        <div class="faq-a-wrap" id="faq-a8" role="region" aria-labelledby="faq-q8"><div class="faq-a-clip"><p class="faq-a">for now, yes. awan is mac-only and needs macos 14 sonoma or later. you can build it yourself from <a href="https://github.com/Aphrosidiac/HaiAwan" rel="noopener">the source</a> today, or <a href="/download/">get on the list</a> for a signed build.</p></div></div></div>
+      <div class="faq-item"><h3><button class="faq-row" type="button" aria-expanded="false" aria-controls="faq-a9" id="faq-q9"><span class="faq-q">is it free?</span><svg class="faq-icon" aria-hidden="true"><use href="#i-plus"/></svg></button></h3>
+        <div class="faq-a-wrap" id="faq-a9" role="region" aria-labelledby="faq-q9"><div class="faq-a-clip"><p class="faq-a">you can start free: 25 talks, plenty of dictation and 25 agent messages a month. pro is $20/month and max is $100/month, or 20% less when billed yearly. cancel anytime.</p></div></div></div>
+      <div class="faq-item"><h3><button class="faq-row" type="button" aria-expanded="false" aria-controls="faq-a10" id="faq-q10"><span class="faq-q">what happens if i hit my agent limit?</span><svg class="faq-icon" aria-hidden="true"><use href="#i-plus"/></svg></button></h3>
+        <div class="faq-a-wrap" id="faq-a10" role="region" aria-labelledby="faq-q10"><div class="faq-a-clip"><p class="faq-a">on pro and max, talk and dictation keep working, always. agent messages pause until your next 30-day cycle, or you can move up to max for 1,000 a month.</p></div></div></div>
+      <div class="faq-item"><h3><button class="faq-row" type="button" aria-expanded="false" aria-controls="faq-a11" id="faq-q11"><span class="faq-q">can i cancel anytime?</span><svg class="faq-icon" aria-hidden="true"><use href="#i-plus"/></svg></button></h3>
+        <div class="faq-a-wrap" id="faq-a11" role="region" aria-labelledby="faq-q11"><div class="faq-a-clip"><p class="faq-a">yes. it's month to month with no lock-in. cancel from settings and keep your plan until the end of the cycle you paid for.</p></div></div></div>
     </div>
   </section>
 

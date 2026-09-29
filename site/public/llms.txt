@@ -1,6 +1,6 @@
-# Awan
+# Hai Awan
 
-> Awan is an AI buddy that lives on your Mac, made by FF Dev Studio (FF DEV STUDIO, 202603234793, Malaysia). Hold Control + Option and ask out loud: Awan looks at your screen, answers, and points at the answer. It also types your dictation into any text box and runs agents ("Awans") that do multi-step work in your apps. It is in private beta for macOS 14 Sonoma or later.
+> Hai Awan is the home of Awan, a free and open-source AI buddy that lives on your Mac, made by FF Dev Studio (FF DEV STUDIO, 202603234793, Malaysia). Hold Control + Option and ask out loud: Awan looks at your screen, answers, and points at the answer. It also types your dictation into any text box and runs agents ("Awans") that do multi-step work in your apps. It runs on macOS 14 Sonoma or later. The full source (Mac app, API server and this website) is public under the MIT license at https://github.com/Aphrosidiac/HaiAwan.
 
 Key facts:
 
@@ -20,6 +20,10 @@ Key facts:
 - [Privacy policy](https://awan.ffdev.studio/privacy/)
 - [Terms of service](https://awan.ffdev.studio/terms/)
 - [Referral terms](https://awan.ffdev.studio/referral-terms/)
+
+## Source
+
+- [GitHub: Aphrosidiac/HaiAwan](https://github.com/Aphrosidiac/HaiAwan): the whole product, MIT licensed
 
 ## Contact
 

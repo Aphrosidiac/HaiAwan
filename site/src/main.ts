@@ -68,19 +68,26 @@ export function observeReveals(root: ParentNode = document) {
 }
 observeReveals();
 
-// ------------------------------------------------------------------ footer wordmark: "awan" in a 5×5 pixel face, one little cloud per pixel
+// ------------------------------------------------------------------ footer wordmark: "hai awan" in a 5-row pixel face, one little cloud per pixel
 const GLYPHS: Record<string, string[]> = {
   a: ['.###.', '....#', '.####', '#...#', '.####'],
   w: ['#...#', '#...#', '#.#.#', '#.#.#', '.#.#.'],
   n: ['####.', '#...#', '#...#', '#...#', '#...#'],
+  h: ['#....', '#....', '####.', '#...#', '#...#'],
+  i: ['#', '.', '#', '#', '#'],
+  ' ': ['..', '..', '..', '..', '..'],
 };
 const CLOUD_TONES = ['#91cefa', '#86c5f5', '#9dd3fb', '#7fbef0', '#a6d8fb'];
 function buildWordmark() {
   const mark = $('#footer-mark');
   if (!mark || mark.childElementCount) return;
-  const word = 'awan';
-  const cols = word.length * 5 + (word.length - 1);
-  const W = 1139, H = 262, cell = 48;
+  const word = 'hai awan';
+  const starts: number[] = [];
+  let cols = 0;
+  for (const ch of word) { starts.push(cols); cols += GLYPHS[ch][0].length + 1; }
+  cols -= 1;
+  const W = 1139, H = 262, cell = Math.min(48, W / cols);
+  const k = cell / 48; // tiles were drawn for a 48px cell
   const offX = (W - cols * cell) / 2, offY = (H - 5 * cell) / 2;
   let rnd = 7;
   const r = () => ((rnd = (rnd * 16807) % 2147483647) / 2147483647);
@@ -90,14 +97,14 @@ function buildWordmark() {
     GLYPHS[ch].forEach((row, y) => {
       [...row].forEach((px, x) => {
         if (px !== '#') return;
-        const cx = offX + (li * 6 + x) * cell + (r() - 0.5) * 6;
-        const cy = offY + y * cell + (r() - 0.5) * 6;
+        const cx = offX + (starts[li] + x) * cell + (r() - 0.5) * 6 * k;
+        const cy = offY + y * cell + (r() - 0.5) * 6 * k;
         const tile = document.createElement('span');
         tile.className = 'tile';
-        tile.style.left = `${((cx - 1) / W) * 100}%`;
-        tile.style.top = `${((cy + 6) / H) * 100}%`;
-        tile.style.width = `${(50 / W) * 100}%`;
-        tile.style.height = `${(35 / H) * 100}%`;
+        tile.style.left = `${((cx - k) / W) * 100}%`;
+        tile.style.top = `${((cy + 6 * k) / H) * 100}%`;
+        tile.style.width = `${((50 * k) / W) * 100}%`;
+        tile.style.height = `${((35 * k) / H) * 100}%`;
         tile.style.setProperty('--r', `${((r() - 0.5) * 10).toFixed(1)}deg`);
         tile.style.setProperty('--d', `${(n * 0.012).toFixed(3)}s`);
         tile.style.color = CLOUD_TONES[Math.floor(r() * CLOUD_TONES.length)];

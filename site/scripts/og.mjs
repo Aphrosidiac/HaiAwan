@@ -34,9 +34,9 @@ body { width: 1200px; height: 630px; background: #F3EFE4; font-family: IS; color
 <svg class="c" viewBox="0 0 100 70" style="left:930px;top:250px;width:120px">${cloud}${eyes}</svg>
 <svg class="c" viewBox="0 0 100 70" style="left:170px;top:300px;width:80px;fill:#fab5a0">${cloud}${eyes}</svg>
 <div class="tag"><div class="hd">HAI<small>nama saya</small></div><div class="bd">awan</div><div class="ft"></div></div>
-<div class="h">awan</div>
+<div class="h">hai awan</div>
 <div class="s">a little cloud that lives on your mac</div>
-<div class="pill">hold ⌃ ⌥ and just ask</div>
+<div class="pill">hold ⌃ ⌥ and just ask &nbsp;·&nbsp; open source</div>
 <div class="kbd"><b>⌃</b><b>⌥</b></div>
 <img class="ff" src="${f('img/ff-lockup-horizontal-ink.svg')}">
 </body></html>`;

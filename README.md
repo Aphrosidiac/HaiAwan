@@ -2,7 +2,7 @@
 
 <img src="site/public/img/app-icon-512.png" alt="Awan app icon" width="112" height="112" />
 
-# HaiAwan
+# Hai Awan
 
 **Awan is an AI buddy that lives in your Mac's notch.**<br/>
 Hold two keys and talk. It sees your screen, points at things, types for you,<br/>
@@ -12,9 +12,11 @@ and sends a team of little Awans off to get real work done in the background.
 [![Swift 6](https://img.shields.io/badge/Swift-6-0B0B0A?logo=swift&logoColor=D9FF43)](app/Package.swift)
 [![Node 26](https://img.shields.io/badge/Node-26-0B0B0A?logo=nodedotjs&logoColor=D9FF43)](server/package.json)
 [![Fastify](https://img.shields.io/badge/API-Fastify%20%2B%20SQLite-0B0B0A)](server)
-[![Status](https://img.shields.io/badge/status-private%20beta-D9FF43)](#status)
+[![License: MIT](https://img.shields.io/badge/license-MIT-D9FF43)](LICENSE)
+[![Website](https://img.shields.io/badge/web-awan.ffdev.studio-0B0B0A)](https://awan.ffdev.studio)
 
-<sub>HaiAwan is the product. Awan is the app. Built by <a href="https://ffdev.studio">FF Dev Studio</a>.</sub>
+<sub>Hai Awan is the product. Awan is the app. Fully open source, built by <a href="https://ffdev.studio">FF Dev Studio</a>.</sub><br/>
+<sub><a href="https://awan.ffdev.studio"><b>awan.ffdev.studio</b></a></sub>
 
 <br/>
 
@@ -172,7 +174,7 @@ flowchart TB
 │   ├── src/                 routes, LLM + speech, auth, plans, billing, teams, connectors, Composio
 │   ├── migrations/          SQL migrations
 │   └── test/                node:test suites
-├── site/                    HaiAwan marketing site (Vite, static)
+├── site/                    Hai Awan website (Vite, static)
 ├── docs/images/             README images
 └── THIRD_PARTY_NOTICES.md
 ```
@@ -308,7 +310,7 @@ separate step.
 
 ## Status
 
-HaiAwan is in **private beta**. The app, API and site run end to end on a single OpenRouter key.
+Hai Awan is early and fully open source. The app, API and site run end to end on a single OpenRouter key.
 
 These pieces are built and tested against stand-ins, and switch on when their credentials are added:
 
@@ -350,10 +352,7 @@ Awan stands on some excellent open-source work. Full texts are in
 
 ## License
 
-Copyright © 2026 FF Dev Studio. All rights reserved.
-
-The source is published for reference. You may read it and learn from it; you may not redistribute it, host it as a
-service or ship it in another product without written permission. See [`LICENSE`](LICENSE). Components listed in
+[MIT](LICENSE) © 2026 FF Dev Studio. Use it, fork it, ship it. Components listed in
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) keep their own licences.
 
 <div align="center">

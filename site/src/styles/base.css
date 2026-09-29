@@ -380,6 +380,14 @@ body[data-page='changelog'] [data-nav='changelog'] { color: var(--ink); }
 .dl-reqs { display: flex; flex-wrap: wrap; gap: 8px; }
 .dl-release { display: flex; flex-direction: column; gap: 12px; }
 .dl-release .btn { align-self: flex-start; }
+.dl-path { display: flex; flex-direction: column; gap: 12px; }
+.dl-path + .dl-path { padding-top: 18px; border-top: 1px dotted rgb(11 11 10 / 0.15); }
+.dl-path .btn { align-self: flex-start; }
+.dl-path p code { font-size: 14px; background: var(--soft); border-radius: 5px; padding: 1px 5px; }
+.dl-code { margin: 0; overflow-x: auto; background: var(--ink); color: #F3EFE4; border-radius: 10px; padding: 14px 16px; font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0; }
+.has-release .dl-path:first-of-type { padding-top: 18px; border-top: 1px dotted rgb(11 11 10 / 0.15); }
+.footer-copy a { color: inherit; }
+.btn-sub a { color: inherit; }
 .dl-meta { font-size: 13px !important; color: var(--t3, var(--t2)) !important; letter-spacing: -0.1px !important; }
 body.has-release .placeholder-note, body.has-release #waitlist { display: none; }
 .chip { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--hair); background: var(--white); font-size: 13px; letter-spacing: -0.2px; color: var(--t2); }
