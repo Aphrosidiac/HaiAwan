@@ -74,26 +74,16 @@ final class NotchDropController: ObservableObject {
         }
     }
 
-    /// The mascot's composer: route to the Awan that fits the ask best.
+    /// The mascot's composer: the ask and the files go to Awan's voice conversation, which answers about small
+    /// images itself or starts the right Awan with the files (like any other turn).
     func submitComposer() {
         let ask = composerDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !ask.isEmpty, !pendingFiles.isEmpty else { return }
+        guard !pendingFiles.isEmpty else { return }
         let files = pendingFiles
-        let store = AgentStore.shared
-        guard let slug = AgentRouter.bestSlug(for: ask, among: store.visibleAgents) ?? store.visibleAgents.first?.slug,
-              let agent = store.agent(slug) else {
-            closeComposer()
-            NotchController.shared.present(.message("Make an Awan first, then drop files on it."), for: 5)
-            return
-        }
-        let paths = Self.copy(files, into: agent)
-        store.send(ask + "\n\nFiles for this (copied into your tmp folder):\n" + paths.map { "- \($0)" }.joined(separator: "\n"),
-                   to: slug, display: ask, source: "notch-drop")
-        Sounds.play(.agentLaunch)
         pendingFiles = []
         composerDraft = ""
         NotchFocus.release()
-        NotchController.shared.present(.message("Sent to \(agent.name)."), for: 4)
+        CompanionEngine.shared.sendText(ask, attachments: files)
     }
 
     func closeComposer() {

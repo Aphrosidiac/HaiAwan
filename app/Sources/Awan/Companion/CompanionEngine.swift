@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import ImageIO
 import Combine
 import Foundation
 import SwiftUI
@@ -320,9 +321,9 @@ final class CompanionEngine: ObservableObject {
         NotchController.shared.dismissSurface()
     }
 
-    func sendText(_ text: String) {
+    func sendText(_ text: String, attachments: [URL] = []) {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !t.isEmpty else { return }
+        guard !t.isEmpty || !attachments.isEmpty else { return }
         interruptResponse()
         cancelGuided(silently: true)
         isTextComposerOpen = false
@@ -345,8 +346,11 @@ final class CompanionEngine: ObservableObject {
             let document = await docTask
             guard let self, !Task.isCancelled else { return }
             // Typed replies stream as text AND are read aloud (unless muted).
-            let turn = CompanionTurn(userText: regions.isEmpty ? t : t + "\n\n" + Self.regionNote, display: t, frames: frames,
-                                     document: document, drawing: nil, app: app, speak: true)
+            let words = t.isEmpty ? "(no message: the user sent only the attached file(s); look at them and respond to what they most likely want done.)" : t
+            let turn = CompanionTurn(userText: regions.isEmpty ? words : words + "\n\n" + Self.regionNote, display: t.isEmpty ? "(sent \(attachments.count) file\(attachments.count == 1 ? "" : "s"))" : t,
+                                     frames: frames, document: document, drawing: nil, app: app, speak: true)
+            turn.attachments = attachments
+            turn.attachedImages = Self.attachedImages(attachments)
             await self.runUserTurn(turn)
         }
     }
@@ -479,9 +483,16 @@ final class CompanionEngine: ObservableObject {
             if convo.lastNotes["document"] != n { notes.append(n); convo.lastNotes["document"] = n }
         }
         if let d = turn.drawing { notes.append(d) }
+        if !turn.attachments.isEmpty {
+            notes.append(Self.attachmentsNote(turn))
+            if turn.attachedImages.isEmpty {
+                turn.capabilities = CompanionTools.capabilities.filter { !["ask_deeper", "read_file", "list_files", "look_at_screen"].contains($0) }
+            }
+        }
+        notes.append(Self.voiceStyleNote())
         lastTurnAt = Date()
         for n in notes { convo.append(.note(n)) }
-        convo.append(.utterance(turn.userText ?? "", images: screensToAttach(turn)))
+        convo.append(.utterance(turn.userText ?? "", images: screensToAttach(turn) + turn.attachedImages))
         convo.record("user", turn.display)
         await runRounds(turn, countUsage: true, toolChoice: "auto")
     }
@@ -492,6 +503,44 @@ final class CompanionEngine: ObservableObject {
         conversation.append(.note(CompanionNotes.time()))
         conversation.append(.note(note))
         await runRounds(turn, countUsage: false, toolChoice: toolChoice)
+    }
+
+    /// This turn's spoken-preamble rule (the reference picks one per turn): one tiny beat, or silence, before a slow
+    /// tool, and never narration between tool calls.
+    static func voiceStyleNote() -> String {
+        let beat = ["one sec.", "okay.", "mm-hm.", "sure, one sec.", ""].randomElement()!
+        return beat.isEmpty
+            ? "[voice style, this turn] if you call a slower tool, say nothing before it; speak only once the result is back. never talk between tool calls."
+            : "[voice style, this turn] if you call a slower tool, the only words before it are \"\(beat)\" (in the user's language), then call it. never talk between tool calls; say the real answer once, at the end."
+    }
+
+    /// Tells the model what was attached and how to route it: at most two small images can be answered on the spot
+    /// (the deeper pass sees them); anything else needs an Awan, and the files go with the task.
+    static func attachmentsNote(_ turn: CompanionTurn) -> String {
+        let names = turn.attachments.prefix(8).map(\.path).joined(separator: ", ")
+        let route = !turn.attachedImages.isEmpty && turn.attachedImages.count == turn.attachments.count
+            ? "they're small images, attached right after this. answer about them yourself or with ask_deeper, or call start_awan_task if the user wants work done with them."
+            : "these need an awan: call start_awan_task now with the user's request (the files go to the awan automatically). don't read, open or look for them yourself, and don't call ask_deeper for them."
+        return "[attachments] the user attached \(turn.attachments.count) file\(turn.attachments.count == 1 ? "" : "s"): \(names). the files and the user's words are the main subject of this turn; any screenshot is secondary. \(route)"
+    }
+
+    /// Up to two image files under 8 MB become pictures the models can see.
+    static func attachedImages(_ urls: [URL]) -> [ScreenCaptureFrame] {
+        let exts: Set<String> = ["png", "jpg", "jpeg", "heic", "gif", "webp", "tiff", "bmp"]
+        let images = urls.filter { exts.contains($0.pathExtension.lowercased()) }
+        guard images.count == urls.count, images.count <= 2 else { return [] }
+        var out: [ScreenCaptureFrame] = []
+        for (i, url) in images.enumerated() {
+            guard (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) ?? 0 < 8_000_000,
+                  let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+                  let img = CGImageSourceCreateThumbnailAtIndex(src, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 1280, kCGImageSourceCreateThumbnailWithTransform: true] as CFDictionary),
+                  let jpeg = ScreenCapture.jpegData(img) else { continue }
+            out.append(ScreenCaptureFrame(index: i + 1, count: images.count, isCursorScreen: false, displayID: 0,
+                                          geometry: CaptureGeometry(displayFrame: .zero, pixelSize: CGSize(width: img.width, height: img.height)),
+                                          image: img, jpeg: jpeg,
+                                          label: "attached image \(i + 1) of \(images.count): \(url.lastPathComponent) (\(img.width)x\(img.height) pixels; a file, not a screen, so never point at it)"))
+        }
+        return out.count == images.count ? out : []
     }
 
     /// Screenshots go into the conversation only when the screen changed since the model last saw it.
@@ -534,7 +583,7 @@ final class CompanionEngine: ObservableObject {
                 var text = ""
                 var calls: [ToolCallItem] = []
                 var chunker = SentenceChunker()
-                let body = TurnBody(items: conversation.wireItems(), context: promptContext(muted: muted), capabilities: CompanionTools.capabilities,
+                let body = TurnBody(items: conversation.wireItems(), context: promptContext(muted: muted), capabilities: turn.capabilities ?? CompanionTools.capabilities,
                                     requestId: turn.id, countUsage: countUsage && round == 1, toolChoice: round == Self.roundCap ? "none" : choice)
                 for try await (event, data) in APIClient.shared.events("v1/companion/turn", body: body) {
                     if Task.isCancelled { return }
@@ -544,7 +593,10 @@ final class CompanionEngine: ObservableObject {
                         let d = json["text"] as? String ?? ""
                         text += d
                         responseText = Self.joinReply(reply, text)
-                        if voice { chunker.push(d).forEach(player.enqueue) }
+                        // The first round streams (its opening beat should be heard at once). Later rounds follow a
+                        // tool result and are held until they end: if they only lead into another tool call, they're
+                        // narration and stay unspoken.
+                        if voice, round == 1 { chunker.push(d).forEach(player.enqueue) }
                     case "tool_call":
                         calls.append(ToolCallItem(id: json["id"] as? String ?? UUID().uuidString, name: json["name"] as? String ?? "", arguments: json["arguments"] as? String ?? "{}"))
                     case "error":
@@ -553,9 +605,16 @@ final class CompanionEngine: ObservableObject {
                         break
                     }
                 }
-                if voice, let rest = chunker.flush() { player.enqueue(rest) }
+                if voice, round == 1, let rest = chunker.flush() { player.enqueue(rest) }
                 let said = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                reply = Self.joinReply(reply, said)
+                if voice, round > 1, calls.isEmpty, !said.isEmpty {
+                    var c = SentenceChunker()
+                    c.push(said).forEach(player.enqueue)
+                    if let rest = c.flush() { player.enqueue(rest) }
+                }
+                // Unspoken narration stays out of what's shown and remembered as said.
+                reply = round > 1 && !calls.isEmpty ? reply : Self.joinReply(reply, said)
+                responseText = reply
                 conversation.append(ConversationItem(role: .assistant, kind: .reply, text: said.isEmpty ? nil : said, toolCalls: calls))
                 bindDeferredVisuals(turn)
                 if calls.isEmpty || Task.isCancelled { break }
@@ -1054,6 +1113,11 @@ final class CompanionTurn {
     var deferredSentenceBase = 0
     /// Set for walkthrough steps (the goal the deeper pass keeps working toward).
     var guidedGoal: String?
+    /// Files the user attached (dropped on the mascot). Small images also ride along as pictures.
+    var attachments: [URL] = []
+    var attachedImages: [ScreenCaptureFrame] = []
+    /// Tools offered this turn (nil = all). Files that need an Awan leave only the hand-off tools.
+    var capabilities: [String]?
 
     init(userText: String?, display: String, frames: [ScreenCaptureFrame], document: ActiveDocument?, drawing: String?, app: NSRunningApplication?, speak: Bool) {
         self.userText = userText

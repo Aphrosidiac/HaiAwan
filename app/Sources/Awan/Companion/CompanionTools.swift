@@ -101,12 +101,12 @@ enum CompanionTools {
     /// its tags here (point, draw, arm a walkthrough target, type, show pictures, start an Awan) and reports back.
     static func askDeeper(question: String, focus: String?, turn: CompanionTurn, engine: CompanionEngine) async -> String {
         if turn.frames.isEmpty { turn.frames = await CompanionEngine.captureFrames() }
-        if turn.frames.isEmpty, turn.document == nil {
+        if turn.frames.isEmpty, turn.document == nil, turn.attachedImages.isEmpty {
             return result(["status": "error", "message": "couldn't capture the screen (awan may be missing Screen Recording permission). answer without the screen or ask the user to allow it in System Settings → Privacy & Security."])
         }
         var body: [String: JSON] = [
             "question": .string(question),
-            "images": .array(turn.frames.map { ["data": .string($0.jpeg.base64EncodedString()), "label": .string($0.label), "mime": "image/jpeg"] }),
+            "images": .array((turn.frames + turn.attachedImages).map { ["data": .string($0.jpeg.base64EncodedString()), "label": .string($0.label), "mime": "image/jpeg"] }),
             "conversation": .array(engine.conversation.recentExchange(limit: 12).map { ["role": .string($0.role == "awan" ? "assistant" : "user"), "text": .string($0.text)] }),
         ]
         if let focus, !focus.isEmpty { body["focus"] = .string(focus) }
@@ -259,7 +259,12 @@ enum CompanionTools {
         guard let slug, let agent = store.agent(slug) else {
             return result(["status": "error", "message": "no awan to take it. found one with new_awan {name, role, description}."])
         }
-        let prompt = Handoff.prompt(original: turn.display.isEmpty ? task : turn.display, task: task, conversation: engine.conversation.recentExchange())
+        var prompt = Handoff.prompt(original: turn.display.isEmpty ? task : turn.display, task: task, conversation: engine.conversation.recentExchange())
+        if !turn.attachments.isEmpty {
+            let paths = dryRun ? turn.attachments.map(\.path) : NotchDropController.copy(turn.attachments, into: agent)
+            if !paths.isEmpty { prompt += "\n\nFiles the user attached (copied into your tmp folder):\n" + paths.map { "- \($0)" }.joined(separator: "\n") }
+            turn.attachments = []
+        }
         guard store.send(prompt, to: slug, display: turn.display.isEmpty ? task : turn.display, source: "voice") != nil else {
             return result(["status": "error", "message": "couldn't start the awan. nothing was started; tell the user plainly instead of claiming it's underway."])
         }

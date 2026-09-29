@@ -165,7 +165,17 @@ enum CompanionVoiceSelfTest {
             }
             if text == "@home-close" { AppState.shared.isHomeOpen = false; print("  (home closed)"); continue }
             let frames = fake ? [fakeFrame()] : await CompanionEngine.captureFrames()
-            let turn = CompanionTurn(userText: text, display: text, frames: frames, document: nil, drawing: nil, app: nil, speak: false)
+            // "@attach <path>[,<path>] <words>": files dropped on the mascot with a message.
+            var words = text
+            var files: [URL] = []
+            if text.hasPrefix("@attach ") {
+                let parts = text.dropFirst(8).split(separator: " ", maxSplits: 1).map(String.init)
+                files = (parts.first ?? "").split(separator: ",").map { URL(fileURLWithPath: String($0)) }
+                words = parts.count > 1 ? parts[1] : ""
+            }
+            let turn = CompanionTurn(userText: words, display: words, frames: frames, document: nil, drawing: nil, app: nil, speak: false)
+            turn.attachments = files
+            turn.attachedImages = CompanionEngine.attachedImages(files)
             let t0 = Date()
             await engine.runUserTurn(turn)
             let secs = Date().timeIntervalSince(t0)
