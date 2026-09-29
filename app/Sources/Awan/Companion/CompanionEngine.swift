@@ -149,8 +149,13 @@ final class CompanionEngine: ObservableObject {
 
     func beginListening(target: String? = nil) {
         if voiceState == .listening { return }
-        // Barge-in: talking over Awan stops it.
-        if voiceState == .responding || voiceState == .processing || player.isActive { interruptResponse() }
+        // Barge-in: talking over Awan stops it. A quick tap (released within `stopTapWindow`) is just "stop".
+        pressStoppedAwan = isBusy || guided != nil
+        if pressStoppedAwan {
+            pendingAnnouncements = []
+            pendingAgentUpdates = []
+            interruptResponse()
+        }
         cancelGuided(silently: true)
         TalkTranscriber.requestAuthorizationIfNeeded()
         listenTarget = target
@@ -201,6 +206,14 @@ final class CompanionEngine: ObservableObject {
 
     func endListening() {
         guard voiceState == .listening else { return }
+        if pressStoppedAwan, Date().timeIntervalSince(listenStartedAt) < Self.stopTapWindow {
+            // Tapped the talk keys to shut Awan up: stop, don't listen or answer.
+            pressStoppedAwan = false
+            abortListening()
+            stop()
+            return
+        }
+        pressStoppedAwan = false
         Sounds.play(.listenEnd)
         let trail = CursorOverlayController.shared.endSpatialTrail()
         setVoice(.processing)
@@ -276,6 +289,10 @@ final class CompanionEngine: ObservableObject {
             await self.runUserTurn(turn)
         }
     }
+
+    /// A press of the talk keys shorter than this, while Awan is talking or thinking, only stops it.
+    static let stopTapWindow: TimeInterval = 0.6
+    private var pressStoppedAwan = false
 
     /// Below this smoothed mic level nothing was said (the level meter's scale: 0 = −55 dB, 1 = −10 dB; 0.45 ≈ −35 dB).
     static let speechLevelFloor: Float = 0.45
@@ -365,11 +382,34 @@ final class CompanionEngine: ObservableObject {
         setVoice(.idle)
     }
 
-    /// Esc: cancel a walkthrough, stop talking, or close the composer.
+    /// Awan is talking, thinking or has speech queued (what a stop would end).
+    var isBusy: Bool {
+        voiceState == .responding || voiceState == .processing || player.isActive || currentTurn != nil
+            || !pendingAnnouncements.isEmpty || !pendingAgentUpdates.isEmpty
+    }
+
+    /// Stop everything Awan is doing out loud, right now: the reply, its tools, a walkthrough, and anything queued to
+    /// be said after it. (Esc, a quick tap of the talk keys, or a click on the notch.)
+    func stop() {
+        let wasBusy = isBusy || guided != nil
+        pendingAnnouncements = []
+        pendingAgentUpdates = []
+        abortListening()
+        interruptResponse()
+        cancelGuided(silently: true)
+        setVoice(.idle)
+        if !Self.headless {
+            CursorOverlayController.shared.clearAnnotations()
+            CursorOverlayController.shared.showCursorBubble(nil)
+            if case .surface(.textResponse) = NotchController.shared.mode { dismissTextResponse() }
+        }
+        if wasBusy { Log.info("companion: stopped by the user") }
+    }
+
+    /// Esc: stop Awan (talking, thinking, a walkthrough, queued speech), or close the composer.
     func handleEscape() {
-        if guided != nil { cancelGuided(silently: false); return }
         if voiceState == .listening { abortListening(); return }   // a hold whose release got lost: Esc always gets you out
-        if voiceState == .responding || voiceState == .processing || player.isActive { cancel(); return }
+        if isBusy || guided != nil { stop(); return }
         if isTextComposerOpen { closeTextComposer() }
     }
 
@@ -396,7 +436,7 @@ final class CompanionEngine: ObservableObject {
         pendingVisuals = []
         setToolStatus(nil)
         conversation.closeDanglingToolCalls()
-        CursorOverlayController.shared.showCursorBubble(nil)
+        if !Self.headless { CursorOverlayController.shared.showCursorBubble(nil) }
     }
 
     // MARK: - Speaking a line

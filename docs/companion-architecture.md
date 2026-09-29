@@ -112,6 +112,16 @@ Holding the keys and saying nothing does nothing:
 - A transcript of only filler ("um", "uh") is dropped. A real hold with no words gets one quiet line on the notch
   ("I didn't catch that"), never a spoken reply.
 
+## Stopping Awan
+
+Any of these stops Awan at once: the reply, the tool it's running, a walkthrough, and anything queued to be said after
+it (agent updates, announcements). What it already said stays in the conversation.
+
+- **Esc**, in any app.
+- **A quick tap of Control + Option** (released within 0.6 s) while Awan is talking or thinking. Holding longer still
+  interrupts and listens, so you can talk over it.
+- **Click the notch** while Awan is talking or thinking (hovering shows a stop button).
+
 ## Testing
 
 ```bash

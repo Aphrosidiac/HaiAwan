@@ -136,16 +136,26 @@ struct NotchHandle: View {
 struct ActivityNotch: View {
     @EnvironmentObject var state: AppState
     @Local private var pulse = false
+    @Local private var hovering = false
 
     var body: some View {
         let running = state.agents.runningAgents
         HStack(spacing: 8) {
             leading
             Spacer()
-            trailing(runningCount: running.count)
+            if hovering, state.companion.voiceState == .responding || state.companion.voiceState == .processing {
+                // Click to stop (the notch's tap handler stops Awan while it's busy).
+                Image(systemName: "stop.circle.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Theme.bone)
+                    .help("Stop Awan (or press Esc)")
+            } else {
+                trailing(runningCount: running.count)
+            }
         }
         .padding(.horizontal, 24)
         .frame(maxHeight: .infinity)
+        .onHover { hovering = $0 }
     }
 
     @ViewBuilder private var leading: some View {

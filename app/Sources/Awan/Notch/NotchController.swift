@@ -256,6 +256,11 @@ final class NotchController: ObservableObject {
 
     /// Click on the notch: peek if quick peek is off, otherwise expand Home.
     func notchClicked() {
+        // While Awan is talking or thinking, a click on the notch stops it.
+        if mode == .activity, CompanionEngine.shared.isBusy {
+            CompanionEngine.shared.stop()
+            return
+        }
         if mode == .peek || !Prefs.shared.quickPeekOnHover {
             AppState.shared.openHome()
             closePeek()

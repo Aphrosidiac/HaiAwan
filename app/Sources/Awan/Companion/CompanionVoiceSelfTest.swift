@@ -81,6 +81,18 @@ enum CompanionVoiceSelfTest {
         c.check("~ paths resolve", CompanionTools.resolvePath("~/Desktop")?.hasPrefix("/") == true && CompanionTools.resolvePath("relative") == nil)
         c.check("every capability has a status label", CompanionTools.capabilities.allSatisfy { CompanionTools.statusLabel(ToolCallItem(id: "", name: $0, arguments: "{}")) != "Working…" })
 
+        print("stop")
+        CompanionConversation.shared = CompanionConversation(fileURL: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("awan-voice-stop.json"), persist: false)
+        CompanionEngine.headless = true
+        let engine = CompanionEngine.shared
+        engine.setVoice(.responding)
+        engine.agentUpdate(slug: "x", name: "Research Scout", summary: "done", spoken: nil, files: [], needsYou: false, speak: true)
+        c.check("an update while Awan talks is queued", engine.isBusy)
+        engine.stop()
+        c.check("stop ends talking and drops queued speech", !engine.isBusy && engine.voiceState == .idle)
+        c.check("the update is still remembered", engine.conversation.transcript.contains { $0.text.contains("Research Scout finished") })
+        c.check("a quick tap of the talk keys only stops", CompanionEngine.stopTapWindow >= 0.4 && CompanionEngine.stopTapWindow <= 0.8)
+
         print("\n\(c.passed) passed, \(c.failed) failed")
         return c.failed == 0
     }
