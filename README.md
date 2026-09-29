@@ -111,35 +111,28 @@ window to open and no app to switch to: you talk, it answers out loud, and it ca
 ## How it works
 
 ```mermaid
-flowchart LR
-    subgraph Mac["Awan.app (macOS, SwiftUI + AppKit)"]
-        N["Notch · Home · Dock"]
-        C["Companion<br/>voice · screen · pointing"]
-        D["Dictation"]
-        R["Agent runtime<br/>(Codex app-server)"]
-        CU["Computer-use MCP<br/>(local, localhost only)"]
-        S["Sparkle updates"]
+flowchart TB
+    subgraph app["Awan.app · macOS"]
+        notch["Notch · Home · Dock"]
+        voice["Companion · Dictation"]
+        awans["Awans · Codex runtime"]
+        cu["Computer use · local MCP"]
     end
-    subgraph API["Awan API (Node + Fastify + SQLite)"]
-        AU["Auth · plans · quotas"]
-        CO["/companion · /speech · /transcribe"]
-        AP["/agent model proxy"]
-        MCP["Hosted Google MCP servers"]
-        BI["Billing · teams · referrals"]
+    subgraph api["Awan API · Fastify + SQLite"]
+        core["Auth · plans · billing"]
+        speech["Companion · speech · transcription"]
+        proxy["Agent model proxy"]
+        gmcp["Google MCP servers"]
     end
-    OR["OpenRouter<br/>(one key: chat, vision, speech, STT, agents)"]
-    EXT["Remote MCP servers<br/>Notion · Linear · GitHub · Composio…"]
+    or["OpenRouter"]
+    ext["Remote MCP servers<br/>Notion · Linear · GitHub · Composio"]
 
-    C -- "screens + audio" --> CO
-    D -- audio --> CO
-    R -- "Responses API" --> AP
-    R -- tools --> CU
-    R -- tools --> MCP
-    R -- tools --> EXT
-    CO --> OR
-    AP --> OR
-    N --- AU
-    BI -. "Stripe (optional)" .- AU
+    notch --> core
+    voice --> speech --> or
+    awans --> proxy --> or
+    awans --> cu
+    awans --> gmcp
+    awans --> ext
 ```
 
 - **One provider key.** The API holds a single OpenRouter key that powers the companion (vision + chat), speech,
