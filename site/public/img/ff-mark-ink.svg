@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 194 72" role="img" aria-labelledby="title desc">
+  <title id="title">FF Dev Studio mark in ink</title>
+  <desc id="desc">Two forward slashes followed by two geometrically identical capital F letterforms.</desc>
+  <g fill="#0B0B0A">
+    <path d="M0 72 16 0h14L14 72Z"/>
+    <path d="M24 72 40 0h14L38 72Z"/>
+    <path d="M72 0h54v15H88v13h32v14H88v30H72Z"/>
+    <path d="M140 0h54v15h-38v13h32v14h-32v30h-16Z"/>
+  </g>
+</svg>

@@ -1,0 +1,22 @@
+# Dependencies and build output
+node_modules/
+.build/
+dist/
+build/
+*.app
+app/Vendor/codex/
+
+# Local config and data
+.env
+.env.*
+!.env.example
+server/data/
+.DS_Store
+
+# Internal notes and tooling (kept on the maintainer's machine, never published)
+private/
+.claude/
+
+# Release artifacts (app/scripts/release.sh): DMGs and the appcast are published with the site, not git
+site/public/download/*.dmg
+site/public/appcast.xml

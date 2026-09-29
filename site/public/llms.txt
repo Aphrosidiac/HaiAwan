@@ -1,0 +1,27 @@
+# Awan
+
+> Awan is an AI buddy that lives on your Mac, made by FF Dev Studio (FF DEV STUDIO, 202603234793, Malaysia). Hold Control + Option and ask out loud: Awan looks at your screen, answers, and points at the answer. It also types your dictation into any text box and runs agents ("Awans") that do multi-step work in your apps. It is in private beta for macOS 14 Sonoma or later.
+
+Key facts:
+
+- Talk: hold Control + Option to ask by voice; double-tap Control to type instead. Awan takes a screenshot only while the hotkey is held; screenshots are not stored.
+- Dictation: hold Control + fn to dictate into any text field.
+- Agents: say "awan, agent" to hand off a job. Each agent (an "Awan") has a name and character, can use skills, computer use and connectors you add (MCP servers or API keys), and can run routines on a schedule.
+- Plans (USD): Free $0 (25 talks, plenty of dictation, 25 agent messages per 30 days); Pro $20/month or $16/month billed yearly (unlimited talk and dictation, 150 agent messages); Max $100/month or $80/month billed yearly (1,000 agent messages). Students get 50% off the first month of Pro.
+- Referrals: every account has awan.ffdev.studio/@handle. Friends get 25% off their first month; referrers earn 25% of each eligible payment for 12 months.
+- Privacy: no background recording, no keystroke or clipboard logging, no third-party analytics in the beta. AI processing via OpenAI, Anthropic and OpenRouter; voices via ElevenLabs; payments via Stripe.
+
+## Pages
+
+- [Home](https://awan.ffdev.studio/): what Awan does, pricing and FAQ
+- [Download / waitlist](https://awan.ffdev.studio/download/): private beta sign-up
+- [Changelog](https://awan.ffdev.studio/changelog/): release notes, starting with 0.1.0 (29 Sep 2026)
+- [Trust](https://awan.ffdev.studio/trust/): what happens to your data, in nine short notes
+- [Privacy policy](https://awan.ffdev.studio/privacy/)
+- [Terms of service](https://awan.ffdev.studio/terms/)
+- [Referral terms](https://awan.ffdev.studio/referral-terms/)
+
+## Contact
+
+- hello@ffdev.studio
+- https://ffdev.studio

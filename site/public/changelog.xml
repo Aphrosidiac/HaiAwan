@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Awan changelog</title>
+    <link>https://awan.ffdev.studio/changelog/</link>
+    <atom:link href="https://awan.ffdev.studio/changelog.xml" rel="self" type="application/rss+xml"/>
+    <description>What's new in Awan, the AI buddy for your Mac by FF Dev Studio.</description>
+    <language>en</language>
+    <item>
+      <title>v0.1.0 — Hello, Awan</title>
+      <link>https://awan.ffdev.studio/changelog/#v0.1.0</link>
+      <guid>https://awan.ffdev.studio/changelog/#v0.1.0</guid>
+      <pubDate>Tue, 29 Sep 2026 00:00:00 +0800</pubDate>
+      <description>The first build of Awan: talk with a hotkey, pointing, dictation, agents with routines and suggestions, the notch and Home, and Free/Pro/Max plans. Private beta for macOS 14 Sonoma or later.</description>
+    </item>
+  </channel>
+</rss>

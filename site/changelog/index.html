@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<!-- @include head -->
+<title>Changelog — Awan</title>
+<meta name="description" content="What's new in Awan, the AI buddy for your Mac by FF Dev Studio. Release notes, starting with Awan 0.1.0.">
+<link rel="canonical" href="https://awan.ffdev.studio/changelog/">
+<meta property="og:title" content="What's new in Awan">
+<meta property="og:description" content="Release notes for Awan, starting with 0.1.0: talk, pointing, dictation, agents, the notch and Home.">
+<meta property="og:url" content="https://awan.ffdev.studio/changelog/">
+<link rel="alternate" type="application/rss+xml" title="Awan changelog" href="/changelog.xml">
+<link rel="stylesheet" href="/src/styles/base.css">
+</head>
+<body data-page="changelog">
+<!-- @include sprite -->
+<!-- @include menubar -->
+<main id="main" class="flow">
+  <div class="dot-grid" aria-hidden="true"></div>
+  <div class="page-hero">
+    <div class="page-head">
+      <span class="plabel">CHANGELOG</span>
+      <h1 class="ptitle">what's new</h1>
+    </div>
+
+    <div class="cl-list">
+      <article class="cl-entry" id="v0.1.0">
+        <div class="cl-aside"><span class="cl-version">v0.1.0</span><time class="cl-date" datetime="2026-09-29">Sep 29, 2026</time></div>
+        <div class="cl-body">
+          <h2 class="cl-title">Hello, Awan</h2>
+          <p class="cl-intro">The first build of Awan, a little cloud that lives in your Mac's notch. You hold a hotkey and talk, it looks at your screen and answers out loud, and it can hand bigger jobs to agents that keep working while you do something else. It's a private beta, so expect rough edges, and tell us about them.</p>
+          <figure class="cl-media">
+            <img src="/img/shot-home.webp" alt="The Awan Home window: a roster of Awans on the left and a cloud asking how it can help" width="1320" height="840" loading="lazy">
+            <figcaption>Home, captured from the 0.1.0 build.</figcaption>
+          </figure>
+
+          <section class="cl-group">
+            <h3 class="cl-group-head">Talk</h3>
+            <ul class="cl-items">
+              <li><span class="cl-lead">Hold Control + Option and ask.</span> Awan takes one screenshot of what you're looking at, answers out loud, and lets go of the screenshot once it has answered.</li>
+              <li><span class="cl-lead">It points.</span> The cursor buddy flies to the thing it's talking about, and can circle or underline it so you know where to click.</li>
+              <li><span class="cl-lead">Type instead.</span> Double-tap Control to ask in text, for when you're somewhere you can't talk.</li>
+              <li><span class="cl-lead">Realtime voice.</span> A back-and-forth voice mode for when one question turns into a conversation.</li>
+            </ul>
+          </section>
+
+          <section class="cl-group">
+            <h3 class="cl-group-head">Dictation</h3>
+            <ul class="cl-items">
+              <li><span class="cl-lead">Hold Control + fn to dictate</span> into any text box, or double-tap for hands-free. Your words are cleaned up before they're typed.</li>
+            </ul>
+          </section>
+
+          <section class="cl-group">
+            <h3 class="cl-group-head">Awans (agents)</h3>
+            <ul class="cl-items">
+              <li><span class="cl-lead">Make an Awan by having a short chat.</span> Each one gets a name, a character, an intro and a few suggested first asks.</li>
+              <li><span class="cl-lead">Send it work by voice or text.</span> Progress shows up as it goes, and finished work comes back as cards you can open.</li>
+              <li><span class="cl-lead">Skills, computer use and your own connectors.</span> Agents can work inside your Mac's apps, and use tools you plug in through an MCP server or an API key.</li>
+              <li><span class="cl-lead">Routines and morning suggestions.</span> Put a job on a schedule, and get a few ideas for your Awans each morning.</li>
+            </ul>
+          </section>
+
+          <section class="cl-group">
+            <h3 class="cl-group-head">Notch &amp; Home</h3>
+            <ul class="cl-items">
+              <li><span class="cl-lead">A home in the notch.</span> Hover to peek at your Awans and their latest updates; open Home for the full list, chats and settings.</li>
+            </ul>
+          </section>
+
+          <section class="cl-group">
+            <h3 class="cl-group-head">Account</h3>
+            <ul class="cl-items">
+              <li><span class="cl-lead">Sign in with an email link.</span> Your sign-in is kept in the macOS Keychain.</li>
+              <li><span class="cl-lead">Free, Pro and Max plans,</span> with limits counted on our server. Payments run in test mode during the beta, so nobody is charged yet.</li>
+              <li><span class="cl-lead">Invite &amp; earn.</span> Every account gets a link at awan.ffdev.studio/@yourname. See the <a href="/referral-terms/">referral terms</a>.</li>
+            </ul>
+          </section>
+
+          <p class="cl-note">0.1.0 is a private beta for macOS 14 Sonoma or later. There's no public download yet: <a href="/download/">join the waitlist</a>.</p>
+        </div>
+      </article>
+    </div>
+  </div>
+  <div class="footer-slot">
+    <!-- @include footer -->
+  </div>
+</main>
+<script type="module" src="/src/page.ts"></script>
+</body>
+</html>

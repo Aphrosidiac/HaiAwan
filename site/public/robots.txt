@@ -1,0 +1,8 @@
+# Awan — awan.ffdev.studio (FF Dev Studio)
+# Search engines and AI assistants are welcome to read and cite every public page.
+User-agent: *
+Allow: /
+# referral landings are copies of the home page
+Disallow: /@
+
+Sitemap: https://awan.ffdev.studio/sitemap.xml

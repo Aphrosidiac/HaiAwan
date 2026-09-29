@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<!-- @include head -->
+<title>Get Awan for Mac — private beta</title>
+<meta name="description" content="Awan for Mac is in private beta. Join the waitlist and FF Dev Studio will send you a build. Needs macOS 14 Sonoma or later.">
+<link rel="canonical" href="https://awan.ffdev.studio/download/">
+<meta property="og:title" content="Get Awan for Mac (private beta)">
+<meta property="og:description" content="Awan is in private beta. Join the waitlist for a build.">
+<meta property="og:url" content="https://awan.ffdev.studio/download/">
+<link rel="stylesheet" href="/src/styles/base.css">
+</head>
+<body data-page="download">
+<!-- @include sprite -->
+<!-- @include menubar -->
+<main id="main" class="flow">
+  <div class="dot-grid" aria-hidden="true"></div>
+  <div class="page-hero">
+    <div class="page-head">
+      <span class="plabel">DOWNLOAD</span>
+      <h1 class="ptitle">awan for mac is in private beta</h1>
+      <p class="psub" style="max-width:560px">we're letting people in a few at a time. leave your email and we'll send you a build when there's a spot.</p>
+    </div>
+    <div class="dl-card">
+      <div class="win">
+        <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="t">waitlist</span></div>
+        <div class="dl-body">
+          <div class="dl-release" id="release" hidden>
+            <h2 id="release-title">awan for mac</h2>
+            <p id="release-sub">the latest build, signed. awan keeps itself up to date after this.</p>
+            <a class="btn lime" id="release-link" href="/appcast.xml"><span class="gloss"></span><span>download awan for mac</span></a>
+            <p class="dl-meta" id="release-meta"></p>
+          </div>
+          <p class="placeholder-note" role="note"><span aria-hidden="true">⚠︎</span><span><b>Placeholder.</b> This form isn't connected to anything yet. Submitting it sends nothing and stores nothing. Until it's live, email <a href="mailto:hello@ffdev.studio?subject=Awan%20waitlist">hello@ffdev.studio</a> to get on the list.</span></p>
+          <p class="dl-done" id="plan-note" hidden></p>
+          <p class="dl-done" id="ref-note" hidden></p>
+          <form class="dl-form" id="waitlist" novalidate action="#" method="dialog">
+            <div class="row">
+              <label for="wl-email">email</label>
+              <input id="wl-email" name="email" type="email" autocomplete="email" required placeholder="you@example.com">
+            </div>
+            <div class="row">
+              <label for="wl-use">what would you use awan for first?</label>
+              <select id="wl-use" name="use">
+                <option>learning an app</option>
+                <option>dictation</option>
+                <option>agents doing work for me</option>
+                <option>just curious</option>
+              </select>
+            </div>
+            <button class="btn lime" type="submit"><span class="gloss"></span><span>join the waitlist</span></button>
+          </form>
+          <p class="dl-done" id="waitlist-done" role="status" hidden></p>
+          <div>
+            <p style="font-size:14px;margin-bottom:8px">what you'll need</p>
+            <div class="dl-reqs"><span class="chip">macOS 14 sonoma or later</span><span class="chip">microphone</span><span class="chip">screen recording permission</span><span class="chip">accessibility permission</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="policy-meta" style="text-align:center;max-width:520px">awan only looks at your screen while you hold the hotkey. read <a href="/trust/">what happens to your data</a>.</p>
+  </div>
+  <div class="footer-slot">
+    <!-- @include footer -->
+  </div>
+</main>
+<script type="module" src="/src/download.ts"></script>
+</body>
+</html>

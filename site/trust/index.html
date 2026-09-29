@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<!-- @include head -->
+<title>Trust — what happens to your data in Awan</title>
+<meta name="description" content="What Awan sees, what it keeps, who processes it and how to delete it. Plain answers from FF Dev Studio.">
+<link rel="canonical" href="https://awan.ffdev.studio/trust/">
+<meta property="og:title" content="What happens to your data in Awan">
+<meta property="og:description" content="Awan only looks at your screen while you hold the hotkey, and screenshots are never stored. The full fine print.">
+<meta property="og:url" content="https://awan.ffdev.studio/trust/">
+<link rel="stylesheet" href="/src/styles/base.css">
+</head>
+<body data-page="trust">
+<!-- @include sprite -->
+<!-- @include menubar -->
+<main id="main" class="flow">
+  <div class="dot-grid" aria-hidden="true"></div>
+  <div class="trust-notes">
+    <div class="page-head">
+      <span class="plabel">THE FINE PRINT</span>
+      <h1 class="ptitle">what happens to your data</h1>
+    </div>
+    <div class="trust-grid js-reveal">
+      <section class="tnote a reveal" style="--tilt:-0.6deg"><h2 class="tnote-h">screen</h2><p>awan only looks at your screen while you hold the hotkey (or when you ask an agent to use your computer). it doesn't watch in the background.</p></section>
+      <section class="tnote b reveal rv-late" style="--tilt:0.4deg"><h2 class="tnote-h">storage</h2><p>screenshots are never stored. they're sent to the model, answered, and dropped. we keep your account, usage counts, your awans' setup and what they need to remember.</p></section>
+      <section class="tnote c reveal rv-late2" style="--tilt:-0.3deg"><h2 class="tnote-h">processing</h2><p>answers come from cloud ai models. your request goes through our own server to the provider (openai, anthropic or openrouter) and back. voices can come from elevenlabs.</p></section>
+      <section class="tnote a reveal" style="--tilt:0.5deg"><h2 class="tnote-h">deletion</h2><p>delete your account from settings and we erase it and everything tied to it. or email <a href="mailto:hello@ffdev.studio">hello@ffdev.studio</a> and we'll do it for you.</p></section>
+      <section class="tnote b reveal rv-late" style="--tilt:-0.5deg"><h2 class="tnote-h">training</h2><p>we don't train models on your data, and we only use providers whose api terms say they don't either.</p></section>
+      <section class="tnote c reveal rv-late2" style="--tilt:0.3deg"><h2 class="tnote-h">background</h2><p>no keystroke logging, no clipboard reading, no file scanning. the one exception: if you turn on morning suggestions, awan reads the connectors you've added, read-only, once a day. you can switch it off.</p></section>
+      <section class="tnote a reveal" style="--tilt:-0.4deg"><h2 class="tnote-h">quitting</h2><p>quit the app and nothing awan runs keeps going on your mac. routines only run while awan is open.</p></section>
+      <section class="tnote b reveal rv-late" style="--tilt:0.6deg"><h2 class="tnote-h">analytics</h2><p>no ad trackers, and no third-party analytics or crash reporting in this beta. this website doesn't set cookies either.</p></section>
+      <section class="tnote c reveal rv-late2" style="--tilt:-0.2deg"><h2 class="tnote-h">certifications</h2><p>no soc 2 or iso 27001. we're a small studio in malaysia, and we'll tell you straight when that changes.</p></section>
+    </div>
+    <p class="policy-meta" style="text-align:center;max-width:560px">the long version is in our <a href="/privacy/">privacy policy</a>. awan is operated by FF DEV STUDIO (202603234793), malaysia.</p>
+  </div>
+  <div class="footer-slot">
+    <!-- @include footer -->
+  </div>
+</main>
+<script type="module" src="/src/page.ts"></script>
+</body>
+</html>

@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<!-- @include head -->
+<title>Privacy policy — Awan</title>
+<meta name="description" content="How FF Dev Studio collects, uses and protects personal data in Awan, the AI buddy for your Mac, under Malaysia's Personal Data Protection Act 2010.">
+<link rel="canonical" href="https://awan.ffdev.studio/privacy/">
+<meta property="og:title" content="Awan privacy policy">
+<meta property="og:description" content="What Awan collects, why, who processes it, how long we keep it, and your rights.">
+<meta property="og:url" content="https://awan.ffdev.studio/privacy/">
+<link rel="stylesheet" href="/src/styles/base.css">
+</head>
+<body data-page="privacy">
+<!-- @include sprite -->
+<!-- @include menubar -->
+<main id="main" class="flow">
+  <div class="dot-grid" aria-hidden="true"></div>
+  <div class="page-hero">
+    <div class="page-head">
+      <span class="plabel">PRIVACY</span>
+      <h1 class="ptitle">privacy policy</h1>
+    </div>
+    <div class="policy">
+      <a class="policy-back" href="/">← back</a>
+      <p class="policy-meta">Last updated 29 September 2026 · Draft for the private beta. The short version is on our <a href="/trust/">trust page</a>.</p>
+
+      <section class="policy-sec">
+        <h2>1. Who we are</h2>
+        <p>Awan is a macOS app and website made and operated by <strong>FF DEV STUDIO (202603234793)</strong>, a business registered in Malaysia ("FF Dev Studio", "we", "us"). We are the data user responsible for your personal data under Malaysia's Personal Data Protection Act 2010 (PDPA). You can reach us at <a href="mailto:hello@ffdev.studio">hello@ffdev.studio</a>.</p>
+        <p>This policy covers the Awan app, the Awan server it talks to, and this website.</p>
+      </section>
+
+      <section class="policy-sec">
+        <h2>2. What we collect</h2>
+        <h3>Account</h3>
+        <ul>
+          <li><strong>Email address</strong>, and a display name and photo if you sign in with Google.</li>
+          <li>Your <strong>referral handle</strong> (your awan.ffdev.studio/@link) and, if someone invited you, who that was.</li>
+          <li>Where you heard about us, if you tell us during onboarding.</li>
+        </ul>
+        <h3>What you ask Awan</h3>
+        <ul>
+          <li><strong>Screenshots</strong>, taken only while you hold the talk hotkey, or when an agent you started uses your computer. They are sent to an AI provider to answer you and are <strong>not stored</strong> on our server.</li>
+          <li><strong>Voice</strong>, while you hold a hotkey, turned into text so Awan can answer or type your dictation. We don't keep the audio.</li>
+          <li><strong>Prompts and replies.</strong> Conversations and agent work live on your Mac. Our server keeps what your Awans need to work: their names, roles and setup, the suggestions made for them, and the answers you gave in the onboarding interview.</li>
+        </ul>
+        <h3>Usage and billing</h3>
+        <ul>
+          <li>A <strong>count of what you use</strong> (talks, dictations, agent messages, voice minutes) so we can apply your plan's limits.</li>
+          <li>If you subscribe, <strong>Stripe</strong> handles payment. We store your Stripe customer and subscription IDs and your plan, never your card number.</li>
+          <li>Bug reports and feature requests you send, with any diagnostics you choose to attach.</li>
+        </ul>
+        <h3>This website</h3>
+        <ul>
+          <li>The site sets no cookies and runs no analytics or ad trackers. If you arrive through an invite link, your browser remembers the inviter's handle in local storage for up to 60 days so the discount can follow you to the download page. It never leaves your browser unless you sign up.</li>
+          <li>The waitlist form on /download is not connected to anything yet; it sends nothing.</li>
+        </ul>
+      </section>
+
+      <section class="policy-sec">
+        <h2>3. How we use it</h2>
+        <ul>
+          <li>To run Awan: answer your questions, run your agents, type your dictation, and keep your Awans set up.</li>
+          <li>To manage your account and plan, apply usage limits, and take payment.</li>
+          <li>To track referrals and pay referral commission (see the <a href="/referral-terms/">referral terms</a>).</li>
+          <li>To reply when you contact us, fix bugs you report, and send important service notices.</li>
+        </ul>
+        <p>We don't sell your personal data, and we don't use it to train AI models.</p>
+      </section>
+
+      <section class="policy-sec">
+        <h2>4. Who processes it for us</h2>
+        <p>To answer you, the content of a request passes through our server to one of these providers, which process it on our behalf under their API terms:</p>
+        <table>
+          <thead><tr><th>Provider</th><th>What for</th></tr></thead>
+          <tbody>
+            <tr><td>OpenAI</td><td>language, vision, speech-to-text, realtime voice and the agent runtime's model</td></tr>
+            <tr><td>Anthropic</td><td>language and vision models</td></tr>
+            <tr><td>OpenRouter</td><td>routing requests to the models above</td></tr>
+            <tr><td>ElevenLabs</td><td>spoken replies, if you pick one of their voices</td></tr>
+            <tr><td>Stripe</td><td>payments and subscriptions</td></tr>
+            <tr><td>Google</td><td>sign-in, only if you choose "continue with Google"</td></tr>
+          </tbody>
+        </table>
+        <p>Our own server runs on infrastructure we manage. Some providers process data outside Malaysia, mainly in the United States; we only send what a request needs.</p>
+        <p>Tools you connect to your Awans yourself (an MCP server or an API key for another service) receive whatever your agents send them. Their own terms apply.</p>
+      </section>
+
+      <section class="policy-sec">
+        <h2>5. How long we keep it</h2>
+        <ul>
+          <li>Screenshots and audio: not kept after your request is answered.</li>
+          <li>Account, Awans and usage counts: while your account is open.</li>
+          <li>When you delete your account (Settings, or by emailing us), we delete your sign-in tokens, usage, Awans, suggestions, onboarding answers and subscription record straight away and anonymise the account row. Referral and payment records we must keep for accounting are kept only as long as the law requires.</li>
+        </ul>
+      </section>
+
+      <section class="policy-sec">
+        <h2>6. Security</h2>
+        <p>Your sign-in token is stored in the macOS Keychain, and our server keeps only a hash of it. Traffic between the app and our server is encrypted. AI provider keys stay on our server and are never shipped in the app. No system is perfectly secure; if something goes wrong that affects you, we'll tell you.</p>
+      </section>
+
+      <section class="policy-sec">
+        <h2>7. Your rights</h2>
+        <p>Under the PDPA you can ask to access the personal data we hold about you, correct it, withdraw consent to how we process it, or have it deleted. Email <a href="mailto:hello@ffdev.studio">hello@ffdev.studio</a> from your account's address and we'll reply within 21 days. You can also delete your account yourself in Settings.</p>
+        <p>Awan isn't meant for children under 13, and we don't knowingly collect their data.</p>
+      </section>
+
+      <section class="policy-sec">
+        <h2>8. Changes</h2>
+        <p>If we change this policy in a way that matters, we'll update the date above and tell you in the app before it takes effect.</p>
+      </section>
+    </div>
+  </div>
+  <div class="footer-slot">
+    <!-- @include footer -->
+  </div>
+</main>
+<script type="module" src="/src/page.ts"></script>
+</body>
+</html>
