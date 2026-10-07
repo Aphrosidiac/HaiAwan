@@ -28,7 +28,7 @@ export const config = {
       return process.env.FAST_MODEL || 'anthropic/claude-haiku-4.5';
     },
     get agent() {
-      return process.env.AGENT_MODEL || 'openai/gpt-6-luna';
+      return process.env.AGENT_MODEL || 'anthropic/claude-sonnet-5.5';
     },
     get speech() {
       return process.env.SPEECH_MODEL || 'openai/gpt-audio';
